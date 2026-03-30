@@ -23,6 +23,7 @@
   "content_scripts": [
     {
       "matches": [
+        "https://reddit.com/*",
         "https://www.reddit.com/*",
         "https://old.reddit.com/*"
       ],
@@ -39,6 +40,7 @@
         "baseline-disabled-visible.svg"
       ],
       "matches": [
+        "https://reddit.com/*",
         "https://www.reddit.com/*",
         "https://old.reddit.com/*"
       ]

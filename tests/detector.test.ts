@@ -17,6 +17,10 @@ function createSettings(overrides: Partial<ExtensionSettings> = {}): ExtensionSe
   };
 }
 
+function getThreadFilterIconSrc(button: ParentNode | null): string {
+  return button?.querySelector<HTMLImageElement>("img")?.getAttribute("src") ?? "";
+}
+
 describe("scanRedditDocument", () => {
   it("badges current Reddit posts inside the left metadata cluster without displacing the menu", () => {
     document.body.innerHTML = `
@@ -159,10 +163,101 @@ describe("scanRedditDocument", () => {
     expect(document.querySelectorAll(THREAD_FILTER_SELECTOR)).toHaveLength(1);
     expect(thread?.firstElementChild?.matches(THREAD_FILTER_SELECTOR)).toBe(true);
     expect(button?.textContent).toBe("Show 2 filtered comments");
-    expect(icon?.getAttribute("src")).toContain("baseline-remove-red-eye.svg");
+    expect(icon).not.toBeNull();
+    expect(getThreadFilterIconSrc(button)).toContain("data:image/svg+xml");
     expect(styles).toContain("justify-content: center");
     expect(styles).toContain("color: #111111");
     comments.forEach((comment) => expect(comment.style.display).toBe("none"));
+  });
+
+  it("anchors the filtered-comment control to Reddit's comment tree container fallback", () => {
+    document.body.innerHTML = `
+      <main>
+        <shreddit-post>
+          <div slot="credit-bar">
+            <span>u/example</span>
+          </div>
+          <a slot="title">Post title</a>
+        </shreddit-post>
+        <div id="comment-tree-content-anchor-0">
+          <shreddit-comment>
+            <div slot="commentMeta">
+              <span>u/example</span>
+            </div>
+            <div slot="comment">It’s not search. It’s discovery.</div>
+          </shreddit-comment>
+        </div>
+      </main>
+    `;
+
+    scanRedditDocument(
+      document,
+      createSettings({
+        autoHideDetected: true,
+      }),
+      "www.reddit.com",
+      "/r/test/comments/abc123/post-title/",
+    );
+
+    const threadHost = document.querySelector<HTMLElement>("#comment-tree-content-anchor-0");
+
+    expect(document.querySelectorAll(THREAD_FILTER_SELECTOR)).toHaveLength(1);
+    expect(threadHost?.firstElementChild?.matches(THREAD_FILTER_SELECTOR)).toBe(true);
+    expect(document.querySelector("main")?.firstElementChild?.tagName).toBe("SHREDDIT-POST");
+  });
+
+  it("prefers extension asset URLs when runtime asset lookup is available", () => {
+    const originalChrome = globalThis.chrome;
+    Object.defineProperty(globalThis, "chrome", {
+      configurable: true,
+      value: {
+        runtime: {
+          getURL: vi.fn((path: string) => `chrome-extension://test/${path}`),
+        },
+      },
+    });
+
+    try {
+      document.body.innerHTML = `
+        <div data-testid="comment-thread">
+          <shreddit-comment>
+            <div slot="commentMeta">
+              <span>u/example</span>
+            </div>
+            <div slot="comment">It’s not search. It’s discovery.</div>
+          </shreddit-comment>
+        </div>
+      `;
+
+      scanRedditDocument(
+        document,
+        createSettings({
+          autoHideDetected: true,
+        }),
+        "www.reddit.com",
+        "/r/test/comments/abc123/post-title/",
+      );
+
+      const button = document.querySelector<HTMLButtonElement>(THREAD_FILTER_TOGGLE_SELECTOR);
+      const showIconSrc = getThreadFilterIconSrc(button);
+
+      expect(showIconSrc).toBe("chrome-extension://test/baseline-remove-red-eye.svg");
+
+      button?.click();
+
+      expect(getThreadFilterIconSrc(button)).toBe(
+        "chrome-extension://test/baseline-disabled-visible.svg",
+      );
+    } finally {
+      if (typeof originalChrome === "undefined") {
+        delete (globalThis as typeof globalThis & { chrome?: typeof chrome }).chrome;
+      } else {
+        Object.defineProperty(globalThis, "chrome", {
+          configurable: true,
+          value: originalChrome,
+        });
+      }
+    }
   });
 
   it("reveals filtered comments dimmed and can hide them again", () => {
@@ -192,12 +287,12 @@ describe("scanRedditDocument", () => {
     const comment = document.querySelector<HTMLElement>("shreddit-comment");
     const meta = document.querySelector<HTMLElement>("[slot='commentMeta']");
     const text = document.querySelector<HTMLElement>("[slot='comment']");
+    const showIconSrc = getThreadFilterIconSrc(button);
 
     button?.click();
     expect(button?.textContent).toBe("Hide 1 filtered comments");
-    expect(button?.querySelector<HTMLImageElement>("img")?.getAttribute("src")).toContain(
-      "baseline-disabled-visible.svg",
-    );
+    expect(getThreadFilterIconSrc(button)).toContain("data:image/svg+xml");
+    expect(getThreadFilterIconSrc(button)).not.toBe(showIconSrc);
     expect(comment?.style.display ?? "").toBe("");
     expect(comment?.style.opacity ?? "").toBe("");
     expect(meta?.style.opacity).toBe("0.56");
@@ -205,9 +300,7 @@ describe("scanRedditDocument", () => {
 
     button?.click();
     expect(button?.textContent).toBe("Show 1 filtered comments");
-    expect(button?.querySelector<HTMLImageElement>("img")?.getAttribute("src")).toContain(
-      "baseline-remove-red-eye.svg",
-    );
+    expect(getThreadFilterIconSrc(button)).toBe(showIconSrc);
     expect(comment?.style.display).toBe("none");
   });
 
@@ -380,22 +473,70 @@ describe("scanRedditDocument", () => {
     expect(document.querySelectorAll(THREAD_FILTER_SELECTOR)).toHaveLength(1);
     expect(document.querySelectorAll(".thing.comment .tagline [data-probably-ai-toggle='true']")).toHaveLength(0);
     expect(siteTable?.firstElementChild?.matches(THREAD_FILTER_SELECTOR)).toBe(true);
+    expect(threadButton?.className).toContain("probably-ai-thread-filter-button");
     expect(threadButton?.className).toContain("probably-ai-thread-filter-button--old");
     expect(threadButton?.textContent).toBe("Show 3 filtered comments");
-    expect(threadButton?.querySelector<HTMLImageElement>("img")?.getAttribute("src")).toContain(
-      "baseline-remove-red-eye.svg",
-    );
+    const showIconSrc = getThreadFilterIconSrc(threadButton);
+    expect(showIconSrc).toContain("data:image/svg+xml");
     comments.forEach((comment) => expect(comment.style.display).toBe("none"));
 
     threadButton?.click();
 
     expect(threadButton?.textContent).toBe("Hide 3 filtered comments");
-    expect(threadButton?.querySelector<HTMLImageElement>("img")?.getAttribute("src")).toContain(
-      "baseline-disabled-visible.svg",
-    );
+    expect(getThreadFilterIconSrc(threadButton)).toContain("data:image/svg+xml");
+    expect(getThreadFilterIconSrc(threadButton)).not.toBe(showIconSrc);
     comments.forEach((comment) => expect(comment.style.display ?? "").toBe(""));
     entries.forEach((entry) => expect(entry.style.opacity).toBe("0.56"));
     midcols.forEach((midcol) => expect(midcol.style.opacity).toBe("0.56"));
+  });
+
+  it("falls back to inline icon URLs when extension asset lookup is unavailable", () => {
+    const originalChrome = globalThis.chrome;
+    Object.defineProperty(globalThis, "chrome", {
+      configurable: true,
+      value: {
+        runtime: {
+          getURL() {
+            throw new Error("Extension context invalidated.");
+          },
+        },
+      },
+    });
+
+    try {
+      document.body.innerHTML = `
+        <div data-testid="comment-thread">
+          <shreddit-comment>
+            <div slot="commentMeta">
+              <span>u/example</span>
+            </div>
+            <div slot="comment">It’s not search. It’s discovery.</div>
+          </shreddit-comment>
+        </div>
+      `;
+
+      scanRedditDocument(
+        document,
+        createSettings({
+          autoHideDetected: true,
+        }),
+        "www.reddit.com",
+        "/r/test/comments/abc123/post-title/",
+      );
+
+      expect(
+        getThreadFilterIconSrc(document.querySelector(THREAD_FILTER_TOGGLE_SELECTOR)),
+      ).toContain("data:image/svg+xml");
+    } finally {
+      if (typeof originalChrome === "undefined") {
+        delete (globalThis as typeof globalThis & { chrome?: typeof chrome }).chrome;
+      } else {
+        Object.defineProperty(globalThis, "chrome", {
+          configurable: true,
+          value: originalChrome,
+        });
+      }
+    }
   });
 
   it("does not render post toggle controls when auto-hide is on", () => {

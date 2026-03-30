@@ -74,7 +74,7 @@ describe("settings normalization", () => {
     expect(normalizeSettings(undefined)).toEqual(createDefaultSettings());
   });
 
-  it("adds autoHideDetected=false for older stored settings", () => {
+  it("adds autoHideDetected=true for older stored settings", () => {
     expect(
       normalizeSettings({
         enabled: true,
@@ -82,7 +82,7 @@ describe("settings normalization", () => {
       }),
     ).toEqual({
       enabled: true,
-      autoHideDetected: false,
+      autoHideDetected: true,
       rules: DEFAULT_RULES,
     });
   });

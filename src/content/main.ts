@@ -21,6 +21,32 @@ let observer: MutationObserver | null = null;
 let scheduledScanId: number | null = null;
 let currentSettings: ExtensionSettings | null = null;
 
+function isExtensionContextInvalidated(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("Extension context invalidated");
+}
+
+function handleContentRuntimeError(error: unknown): void {
+  if (isExtensionContextInvalidated(error)) {
+    return;
+  }
+
+  throw error;
+}
+
+async function resolveContentSettings(): Promise<ExtensionSettings | null> {
+  try {
+    const nextSettings = await getSettings();
+    currentSettings = nextSettings;
+    return nextSettings;
+  } catch (error) {
+    if (!isExtensionContextInvalidated(error)) {
+      throw error;
+    }
+
+    return currentSettings;
+  }
+}
+
 function start(): void {
   if (!document.body) {
     window.addEventListener("DOMContentLoaded", start, { once: true });
@@ -29,24 +55,33 @@ function start(): void {
 
   observer = new MutationObserver(handleMutations);
   observeDom();
-  void refresh();
+  void refresh().catch(handleContentRuntimeError);
 
-  chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== "sync" || !changes[STORAGE_KEY]) {
-      return;
-    }
+  try {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== "sync" || !changes[STORAGE_KEY]) {
+        return;
+      }
 
-    void refresh();
-  });
+      void refresh().catch(handleContentRuntimeError);
+    });
+  } catch (error) {
+    handleContentRuntimeError(error);
+  }
 }
 
 async function refresh(): Promise<void> {
-  currentSettings = await getSettings();
+  const nextSettings = await resolveContentSettings();
+  if (!nextSettings) {
+    return;
+  }
+
+  currentSettings = nextSettings;
   withObserverPaused(() => {
     clearInjectedUi(document);
     scanRedditDocument(
       document,
-      currentSettings as ExtensionSettings,
+      nextSettings,
       window.location.hostname,
       window.location.pathname,
     );
@@ -65,7 +100,7 @@ function handleMutations(mutations: MutationRecord[]): void {
   scheduledScanId = window.setTimeout(() => {
     scheduledScanId = null;
     if (!currentSettings) {
-      void refresh();
+      void refresh().catch(handleContentRuntimeError);
       return;
     }
 
