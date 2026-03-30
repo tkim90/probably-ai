@@ -4,9 +4,7 @@ import {
   COLLAPSE_SELECTOR,
   THREAD_FILTER_SELECTOR,
   THREAD_FILTER_TOGGLE_SELECTOR,
-  TOGGLE_SELECTOR,
   scanRedditDocument,
-  toggleCandidateExpanded,
 } from "../src/content/detector";
 import type { ExtensionSettings } from "../src/shared/types";
 
@@ -20,12 +18,15 @@ function createSettings(overrides: Partial<ExtensionSettings> = {}): ExtensionSe
 }
 
 describe("scanRedditDocument", () => {
-  it("badges current Reddit posts in the metadata row", () => {
+  it("badges current Reddit posts inside the left metadata cluster without displacing the menu", () => {
     document.body.innerHTML = `
       <shreddit-post>
         <div slot="credit-bar">
-          <span>u/example</span>
-          <span>1 day ago</span>
+          <div slot="author-metadata" data-testid="author-cluster">
+            <span>u/example</span>
+            <span>1 day ago</span>
+          </div>
+          <button data-testid="post-overflow-menu">...</button>
         </div>
         <a slot="title">This changes everything for solo founders</a>
         <div slot="text-body">No body</div>
@@ -34,18 +35,33 @@ describe("scanRedditDocument", () => {
 
     const matches = scanRedditDocument(document, createSettings(), "www.reddit.com", "/r/test/");
     const metadataRow = document.querySelector<HTMLElement>("[slot='credit-bar']");
+    const authorCluster = document.querySelector<HTMLElement>("[data-testid='author-cluster']");
+    const overflowButton = document.querySelector<HTMLElement>("[data-testid='post-overflow-menu']");
+    const badge = document.querySelector<HTMLElement>(BADGE_SELECTOR);
+    const styles = document.head.textContent ?? "";
+    const directBadgeChild = Array.from(metadataRow?.children ?? []).find((child) =>
+      child.matches(BADGE_SELECTOR),
+    );
 
     expect(matches).toBe(1);
     expect(document.querySelectorAll(BADGE_SELECTOR)).toHaveLength(1);
-    expect(metadataRow?.querySelector(BADGE_SELECTOR)).not.toBeNull();
+    expect(badge?.textContent).toBe("🔴 Probably AI");
+    expect(authorCluster?.querySelector(BADGE_SELECTOR)).not.toBeNull();
+    expect(directBadgeChild).toBeUndefined();
+    expect(overflowButton?.parentElement).toBe(metadataRow);
+    expect(styles).toContain("background: #363636");
+    expect(styles).toContain("color: #f5f1e8");
   });
 
-  it("auto-hides feed posts and keeps the show button visible", () => {
+  it("keeps feed posts visible and only marks them when auto-hide is on", () => {
     document.body.innerHTML = `
       <shreddit-post>
         <div slot="credit-bar">
-          <span>u/example</span>
-          <span>1 day ago</span>
+          <div slot="author-metadata" data-testid="author-cluster">
+            <span>u/example</span>
+            <span>1 day ago</span>
+          </div>
+          <button data-testid="post-overflow-menu">...</button>
         </div>
         <a slot="title">This changes everything for solo founders</a>
         <div slot="text-body">Founders should validate with real customers first.</div>
@@ -65,17 +81,15 @@ describe("scanRedditDocument", () => {
     const title = document.querySelector<HTMLElement>("[slot='title']");
     const body = document.querySelector<HTMLElement>("[slot='text-body']");
     const actions = document.querySelector<HTMLElement>("[data-testid='post-actions']");
+    const metadataRow = document.querySelector<HTMLElement>("[slot='credit-bar']");
+    const overflowButton = document.querySelector<HTMLElement>("[data-testid='post-overflow-menu']");
     const control = document.querySelector<HTMLElement>(COLLAPSE_SELECTOR);
-    const button = document.querySelector<HTMLButtonElement>(TOGGLE_SELECTOR);
-    const preview = document.querySelector<HTMLElement>("[data-probably-ai-preview='true']");
 
-    expect(control).not.toBeNull();
-    expect(control?.className).toContain("probably-ai-post-collapse");
-    expect(button?.textContent).toBe("Show");
-    expect(button && !title?.contains(button)).toBe(true);
-    expect(preview?.textContent).toContain("This changes everything for solo founders");
-    expect(title?.style.display).toBe("none");
-    expect(body?.style.display).toBe("none");
+    expect(document.querySelectorAll(BADGE_SELECTOR)).toHaveLength(1);
+    expect(control).toBeNull();
+    expect(overflowButton?.parentElement).toBe(metadataRow);
+    expect(title?.style.display ?? "").toBe("");
+    expect(body?.style.display ?? "").toBe("");
     expect(actions?.style.display ?? "").toBe("");
   });
 
@@ -138,12 +152,14 @@ describe("scanRedditDocument", () => {
     const thread = document.querySelector<HTMLElement>("[data-testid='comment-thread']");
     const comments = document.querySelectorAll<HTMLElement>("shreddit-comment");
     const styles = document.head.textContent ?? "";
+    const icon = button?.querySelector<HTMLImageElement>("img");
 
     expect(document.querySelectorAll(BADGE_SELECTOR)).toHaveLength(0);
     expect(document.querySelectorAll(COLLAPSE_SELECTOR)).toHaveLength(0);
     expect(document.querySelectorAll(THREAD_FILTER_SELECTOR)).toHaveLength(1);
     expect(thread?.firstElementChild?.matches(THREAD_FILTER_SELECTOR)).toBe(true);
     expect(button?.textContent).toBe("Show 2 filtered comments");
+    expect(icon?.getAttribute("src")).toContain("baseline-remove-red-eye.svg");
     expect(styles).toContain("justify-content: center");
     expect(styles).toContain("color: #111111");
     comments.forEach((comment) => expect(comment.style.display).toBe("none"));
@@ -179,6 +195,9 @@ describe("scanRedditDocument", () => {
 
     button?.click();
     expect(button?.textContent).toBe("Hide 1 filtered comments");
+    expect(button?.querySelector<HTMLImageElement>("img")?.getAttribute("src")).toContain(
+      "baseline-disabled-visible.svg",
+    );
     expect(comment?.style.display ?? "").toBe("");
     expect(comment?.style.opacity ?? "").toBe("");
     expect(meta?.style.opacity).toBe("0.56");
@@ -186,6 +205,9 @@ describe("scanRedditDocument", () => {
 
     button?.click();
     expect(button?.textContent).toBe("Show 1 filtered comments");
+    expect(button?.querySelector<HTMLImageElement>("img")?.getAttribute("src")).toContain(
+      "baseline-remove-red-eye.svg",
+    );
     expect(comment?.style.display).toBe("none");
   });
 
@@ -293,6 +315,7 @@ describe("scanRedditDocument", () => {
     const title = document.querySelector<HTMLAnchorElement>(".thing.link .title");
 
     expect(tagline?.querySelector(BADGE_SELECTOR)).not.toBeNull();
+    expect(document.querySelectorAll(COLLAPSE_SELECTOR)).toHaveLength(0);
     expect(tagline?.querySelector("[data-probably-ai-toggle='true']")).toBeNull();
     expect(title?.style.display ?? "").toBe("");
     expect(title?.getAttribute("href")).toBe("/r/test/comments/abc123/post-title/");
@@ -359,17 +382,23 @@ describe("scanRedditDocument", () => {
     expect(siteTable?.firstElementChild?.matches(THREAD_FILTER_SELECTOR)).toBe(true);
     expect(threadButton?.className).toContain("probably-ai-thread-filter-button--old");
     expect(threadButton?.textContent).toBe("Show 3 filtered comments");
+    expect(threadButton?.querySelector<HTMLImageElement>("img")?.getAttribute("src")).toContain(
+      "baseline-remove-red-eye.svg",
+    );
     comments.forEach((comment) => expect(comment.style.display).toBe("none"));
 
     threadButton?.click();
 
     expect(threadButton?.textContent).toBe("Hide 3 filtered comments");
+    expect(threadButton?.querySelector<HTMLImageElement>("img")?.getAttribute("src")).toContain(
+      "baseline-disabled-visible.svg",
+    );
     comments.forEach((comment) => expect(comment.style.display ?? "").toBe(""));
     entries.forEach((entry) => expect(entry.style.opacity).toBe("0.56"));
     midcols.forEach((midcol) => expect(midcol.style.opacity).toBe("0.56"));
   });
 
-  it("supports toggling expanded posts by candidate key", () => {
+  it("does not render post toggle controls when auto-hide is on", () => {
     document.body.innerHTML = `
       <shreddit-post>
         <div slot="credit-bar">
@@ -390,14 +419,9 @@ describe("scanRedditDocument", () => {
       "/r/test/",
     );
 
-    const key = document.querySelector<HTMLButtonElement>(TOGGLE_SELECTOR)?.dataset.candidateKey;
-    expect(key).toBeTruthy();
-
-    if (key) {
-      toggleCandidateExpanded(key);
-    }
-
+    expect(document.querySelectorAll(COLLAPSE_SELECTOR)).toHaveLength(0);
     expect(document.querySelector<HTMLElement>("[slot='title']")?.style.display ?? "").toBe("");
+    expect(document.querySelector<HTMLElement>("[slot='text-body']")?.style.display ?? "").toBe("");
   });
 
   it("turning off auto-hide restores content and removes injected controls", () => {

@@ -16,13 +16,6 @@ export const DEFAULT_RULES: StoredRule[] = [
     matchType: "literal",
   },
   {
-    id: "default-double-dash",
-    pattern: "--",
-    enabled: true,
-    source: "default",
-    matchType: "literal",
-  },
-  {
     id: "default-em-dash",
     pattern: "—",
     enabled: true,

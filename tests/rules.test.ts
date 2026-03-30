@@ -57,6 +57,16 @@ describe("rule matching", () => {
 
     expect(matchesAnyRule("It's not coffee. It's a lifestyle.", compiled)).toBe(true);
   });
+
+  it("matches em dashes by default", () => {
+    const compiled = compileRules(DEFAULT_RULES);
+    expect(matchesAnyRule("This sentence uses an em dash — like this.", compiled)).toBe(true);
+  });
+
+  it("does not match double dashes by default", () => {
+    const compiled = compileRules(DEFAULT_RULES);
+    expect(matchesAnyRule("This sentence uses a double dash -- like this.", compiled)).toBe(false);
+  });
 });
 
 describe("settings normalization", () => {

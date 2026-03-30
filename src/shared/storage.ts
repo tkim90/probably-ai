@@ -42,11 +42,6 @@ export function buildResetSettings(settings: ExtensionSettings): ExtensionSettin
   return {
     enabled: settings.enabled,
     autoHideDetected: settings.autoHideDetected,
-    rules: [
-      ...cloneDefaultRules(),
-      ...settings.rules
-        .filter((rule) => rule.source === "user")
-        .map((rule) => ({ ...rule })),
-    ],
+    rules: cloneDefaultRules(),
   };
 }

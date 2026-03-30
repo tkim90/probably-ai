@@ -14,6 +14,10 @@ const DIMMED_ATTRIBUTE = "data-probably-ai-dimmed";
 const ORIGINAL_OPACITY_ATTRIBUTE = "data-probably-ai-original-opacity";
 const THREAD_FILTER_ATTRIBUTE = "data-probably-ai-thread-filter";
 const THREAD_FILTER_TOGGLE_ATTRIBUTE = "data-probably-ai-thread-filter-toggle";
+const THREAD_FILTER_ICON_ATTRIBUTE = "data-probably-ai-thread-filter-icon";
+const THREAD_FILTER_LABEL_ATTRIBUTE = "data-probably-ai-thread-filter-label";
+const SHOW_FILTERED_COMMENTS_ICON = "baseline-remove-red-eye.svg";
+const HIDE_FILTERED_COMMENTS_ICON = "baseline-disabled-visible.svg";
 
 type Placement = "after" | "prepend" | "append";
 type CandidateKind = "post" | "comment";
@@ -25,6 +29,7 @@ interface ScanCandidate {
   platform: PlatformKind;
   container: HTMLElement;
   indicatorTarget: HTMLElement;
+  badgeTarget: HTMLElement;
   placement: Placement;
   contentTargets: HTMLElement[];
   dimTargets: HTMLElement[];
@@ -257,8 +262,8 @@ function ensureInjectedStyles(documentRef: Document): void {
       margin: 0;
       padding: 0.14rem 0.45rem;
       border-radius: 999px;
-      background: #c62828;
-      color: #ffffff;
+      background: #363636;
+      color: #f5f1e8;
       font-size: 0.72rem;
       font-weight: 700;
       line-height: 1;
@@ -348,6 +353,7 @@ function ensureInjectedStyles(documentRef: Document): void {
       display: flex;
       align-items: center;
       justify-content: center;
+      gap: 0.55rem;
       border: 1px solid rgba(0, 0, 0, 0.12);
       border-radius: 18px;
       background: rgba(255, 255, 255, 0.9);
@@ -355,7 +361,7 @@ function ensureInjectedStyles(documentRef: Document): void {
       cursor: pointer;
       font: inherit;
       font-size: 0.95rem;
-      line-height: 1.2;
+      line-height: 1;
       opacity: 0.88;
       padding: 1rem 1.2rem;
       text-align: center;
@@ -372,14 +378,16 @@ function ensureInjectedStyles(documentRef: Document): void {
 
     .probably-ai-thread-filter-button--old {
       width: auto;
-      display: inline;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
       background: transparent;
       border: 0;
       color: #24a0ed;
       cursor: pointer;
       font: inherit;
       font-size: 1em;
-      line-height: 1.2;
+      line-height: 1;
       padding: 0;
       text-align: left;
       text-decoration: none;
@@ -387,6 +395,18 @@ function ensureInjectedStyles(documentRef: Document): void {
 
     .probably-ai-thread-filter-button--old:hover {
       text-decoration: underline;
+    }
+
+    .probably-ai-thread-filter-icon {
+      width: 1rem;
+      height: 1rem;
+      display: block;
+      flex: 0 0 auto;
+    }
+
+    .probably-ai-thread-filter-label {
+      display: block;
+      line-height: 1;
     }
   `;
 
@@ -401,15 +421,7 @@ function shouldIndividuallyHide(
   candidate: ScanCandidate,
   autoHideDetected: boolean,
 ): boolean {
-  if (!autoHideDetected) {
-    return false;
-  }
-
-  if (candidate.kind === "comment") {
-    return candidate.platform === "current";
-  }
-
-  return !candidate.isMainSubmission;
+  return autoHideDetected && candidate.kind === "comment" && candidate.platform === "current";
 }
 
 function syncBadge(candidate: ScanCandidate, matched: boolean): void {
@@ -420,18 +432,18 @@ function syncBadge(candidate: ScanCandidate, matched: boolean): void {
   }
 
   if (existingBadge) {
-    if (existingBadge.parentElement !== candidate.indicatorTarget) {
-      moveIndicator(existingBadge, candidate);
+    if (existingBadge.parentElement !== candidate.badgeTarget) {
+      moveIndicator(existingBadge, candidate.badgeTarget, candidate.placement);
     }
 
     return;
   }
 
-  const badge = candidate.indicatorTarget.ownerDocument.createElement("span");
+  const badge = candidate.badgeTarget.ownerDocument.createElement("span");
   badge.className = "probably-ai-badge";
   badge.setAttribute(BADGE_ATTRIBUTE, "true");
-  badge.textContent = "🟡 Probably AI";
-  moveIndicator(badge, candidate);
+  badge.textContent = "🔴 Probably AI";
+  moveIndicator(badge, candidate.badgeTarget, candidate.placement);
 }
 
 function syncCollapse(
@@ -466,7 +478,7 @@ function syncCollapseControl(candidate: ScanCandidate): void {
   }
 
   if (control.parentElement !== candidate.indicatorTarget) {
-    moveIndicator(control, candidate);
+    moveIndicator(control, candidate.indicatorTarget, candidate.placement);
   }
 
   const preview = control.querySelector<HTMLElement>(`[${PREVIEW_ATTRIBUTE}="true"]`);
@@ -573,7 +585,7 @@ function createInlineCollapseControl(candidate: ScanCandidate): HTMLElement {
   });
 
   control.append(preview, button);
-  moveIndicator(control, candidate);
+  moveIndicator(control, candidate.indicatorTarget, candidate.placement);
   return control;
 }
 
@@ -589,8 +601,8 @@ function syncThreadGroupControl(group: ThreadGroup): void {
 
   if (button) {
     button.dataset.threadKey = group.key;
-    button.textContent = `${revealed ? "Hide" : "Show"} ${count} filtered comments`;
     button.setAttribute("aria-expanded", String(revealed));
+    syncThreadGroupButtonContents(button, revealed, count);
   }
 
   placeThreadGroupControl(control, group);
@@ -618,9 +630,38 @@ function createThreadGroupControl(group: ThreadGroup): HTMLElement {
     }
   });
 
+  const icon = group.host.ownerDocument.createElement("img");
+  icon.className = "probably-ai-thread-filter-icon";
+  icon.setAttribute(THREAD_FILTER_ICON_ATTRIBUTE, "true");
+  icon.alt = "";
+  icon.setAttribute("aria-hidden", "true");
+
+  const label = group.host.ownerDocument.createElement("span");
+  label.className = "probably-ai-thread-filter-label";
+  label.setAttribute(THREAD_FILTER_LABEL_ATTRIBUTE, "true");
+
+  button.append(icon, label);
   control.append(button);
   placeThreadGroupControl(control, group);
   return control;
+}
+
+function syncThreadGroupButtonContents(
+  button: HTMLButtonElement,
+  revealed: boolean,
+  count: number,
+): void {
+  const icon = button.querySelector<HTMLImageElement>(`[${THREAD_FILTER_ICON_ATTRIBUTE}="true"]`);
+  const label = button.querySelector<HTMLElement>(`[${THREAD_FILTER_LABEL_ATTRIBUTE}="true"]`);
+  const iconPath = revealed ? HIDE_FILTERED_COMMENTS_ICON : SHOW_FILTERED_COMMENTS_ICON;
+
+  if (icon) {
+    icon.src = getExtensionAssetUrl(iconPath);
+  }
+
+  if (label) {
+    label.textContent = `${revealed ? "Hide" : "Show"} ${count} filtered comments`;
+  }
 }
 
 function placeThreadGroupControl(control: HTMLElement, group: ThreadGroup): void {
@@ -713,18 +754,26 @@ function undimElement(element: HTMLElement): void {
   element.removeAttribute(ORIGINAL_OPACITY_ATTRIBUTE);
 }
 
-function moveIndicator(element: HTMLElement, candidate: ScanCandidate): void {
-  if (candidate.placement === "after") {
-    candidate.indicatorTarget.insertAdjacentElement("afterend", element);
+function moveIndicator(element: HTMLElement, target: HTMLElement, placement: Placement): void {
+  if (placement === "after") {
+    target.insertAdjacentElement("afterend", element);
     return;
   }
 
-  if (candidate.placement === "prepend") {
-    candidate.indicatorTarget.prepend(element);
+  if (placement === "prepend") {
+    target.prepend(element);
     return;
   }
 
-  candidate.indicatorTarget.append(element);
+  target.append(element);
+}
+
+function getExtensionAssetUrl(path: string): string {
+  if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
+    return chrome.runtime.getURL(path);
+  }
+
+  return path;
 }
 
 function attachIsolatedButtonHandler(
@@ -787,10 +836,10 @@ function collectCurrentRedditPosts(
 
   return containers
     .map((container, index) => {
-      const metadataTarget = findMetadataTarget(container, [
+      const controlTarget = findMetadataTarget(container, [
         "[slot='credit-bar']",
-        "[slot='author-metadata']",
         "[data-testid='post-subheader']",
+        "[slot='author-metadata']",
         "[data-testid='post_author_line']",
         "faceplate-tracker[noun='post_author']",
         ".tagline",
@@ -818,7 +867,8 @@ function collectCurrentRedditPosts(
           ".entry .tagline",
           ".entry .title",
         ]) ?? container;
-      const indicatorTarget = metadataTarget ?? fallbackTarget;
+      const indicatorTarget = controlTarget ?? fallbackTarget;
+      const badgeTarget = findCurrentPostBadgeTarget(container, indicatorTarget);
       const text = collectText(container, [
         "a[data-testid='post-title-text']",
         "[slot='title']",
@@ -839,7 +889,8 @@ function collectCurrentRedditPosts(
         platform: "current",
         container,
         indicatorTarget,
-        placement: metadataTarget ? "append" : "prepend",
+        badgeTarget,
+        placement: controlTarget ? "append" : "prepend",
         contentTargets,
         dimTargets: [],
         text,
@@ -881,6 +932,7 @@ function collectCurrentRedditComments(root: Document | Element): ScanCandidate[]
         platform: "current",
         container,
         indicatorTarget: metadataTarget ?? fallbackTarget,
+        badgeTarget: metadataTarget ?? fallbackTarget,
         placement: metadataTarget ? "append" : "prepend",
         contentTargets: [container],
         dimTargets: collectCurrentCommentDimTargets(container),
@@ -917,6 +969,7 @@ function collectOldRedditPosts(
         platform: "old",
         container,
         indicatorTarget,
+        badgeTarget: indicatorTarget,
         placement: "append",
         contentTargets,
         dimTargets: [],
@@ -941,6 +994,7 @@ function collectOldRedditComments(root: Document | Element): ScanCandidate[] {
         platform: "old",
         container,
         indicatorTarget,
+        badgeTarget: indicatorTarget,
         placement: "append",
         contentTargets,
         dimTargets: collectOldCommentDimTargets(container),
@@ -957,6 +1011,7 @@ function buildCandidate({
   platform,
   container,
   indicatorTarget,
+  badgeTarget = indicatorTarget,
   placement,
   contentTargets,
   dimTargets = [],
@@ -969,6 +1024,7 @@ function buildCandidate({
   platform: PlatformKind;
   container: HTMLElement;
   indicatorTarget: HTMLElement;
+  badgeTarget?: HTMLElement;
   placement: Placement;
   contentTargets: HTMLElement[];
   dimTargets?: HTMLElement[];
@@ -988,8 +1044,11 @@ function buildCandidate({
     platform,
     container,
     indicatorTarget,
+    badgeTarget,
     placement,
-    contentTargets: contentTargets.filter((element) => element !== indicatorTarget),
+    contentTargets: contentTargets.filter(
+      (element) => element !== indicatorTarget && element !== badgeTarget,
+    ),
     dimTargets,
     text: normalizedText,
     previewText: createPreviewText(normalizedText),
@@ -1085,13 +1144,66 @@ function collectOldCommentDimTargets(container: HTMLElement): HTMLElement[] {
 }
 
 function findMetadataTarget(container: HTMLElement, selectors: string[]): HTMLElement | null {
-  const metadataRow = selectFirst(container, selectors);
+  const metadataRow = findSelfOrDescendant(container, selectors);
   if (!metadataRow) {
     return null;
   }
 
   metadataRow.setAttribute(META_ROW_ATTRIBUTE, "true");
   return metadataRow;
+}
+
+function findCurrentPostBadgeTarget(
+  container: HTMLElement,
+  controlTarget: HTMLElement,
+): HTMLElement {
+  const narrowSelectors = [
+    "[slot='author-metadata']",
+    "[data-testid='post_author_line']",
+    "faceplate-tracker[noun='post_author']",
+    ".tagline",
+  ];
+  const narrowTarget =
+    findSelfOrDescendant(controlTarget, narrowSelectors) ??
+    findSelfOrDescendant(container, narrowSelectors);
+  if (narrowTarget) {
+    narrowTarget.setAttribute(META_ROW_ATTRIBUTE, "true");
+    return narrowTarget;
+  }
+
+  const broadCurrentSelectors = ["[slot='credit-bar']", "[data-testid='post-subheader']"];
+  if (
+    broadCurrentSelectors.some((selector) => controlTarget.matches(selector)) &&
+    controlTarget.childElementCount > 1
+  ) {
+    const firstVisualChild = Array.from(controlTarget.children).find(
+      (child): child is HTMLElement =>
+        child instanceof HTMLElement &&
+        !child.matches("button, [role='button'], faceplate-dropdown-menu, [aria-haspopup='menu']"),
+    );
+    if (firstVisualChild) {
+      firstVisualChild.setAttribute(META_ROW_ATTRIBUTE, "true");
+      return firstVisualChild;
+    }
+  }
+
+  controlTarget.setAttribute(META_ROW_ATTRIBUTE, "true");
+  return controlTarget;
+}
+
+function findSelfOrDescendant(container: HTMLElement, selectors: string[]): HTMLElement | null {
+  for (const selector of selectors) {
+    if (container.matches(selector)) {
+      return container;
+    }
+
+    const match = container.querySelector<HTMLElement>(selector);
+    if (match) {
+      return match;
+    }
+  }
+
+  return null;
 }
 
 function pickCurrentContainers(

@@ -6,7 +6,17 @@
   "permissions": [
     "storage"
   ],
+  "icons": {
+    "16": "16.png",
+    "48": "48.png",
+    "128": "128.png"
+  },
   "action": {
+    "default_icon": {
+      "16": "16.png",
+      "48": "48.png",
+      "128": "128.png"
+    },
     "default_popup": "popup.html",
     "default_title": "Probably AI"
   },
@@ -20,6 +30,18 @@
         "assets/content.js"
       ],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "baseline-remove-red-eye.svg",
+        "baseline-disabled-visible.svg"
+      ],
+      "matches": [
+        "https://www.reddit.com/*",
+        "https://old.reddit.com/*"
+      ]
     }
   ]
 }

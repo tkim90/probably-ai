@@ -14,9 +14,13 @@ const matchTypeInputs = Array.from(
 const formError = document.querySelector<HTMLParagraphElement>("#form-error");
 const ruleList = document.querySelector<HTMLUListElement>("#rule-list");
 const resetDefaultsButton = document.querySelector<HTMLButtonElement>("#reset-defaults");
+const resetConfirmation = document.querySelector<HTMLDivElement>("#reset-confirmation");
+const resetConfirmYesButton = document.querySelector<HTMLButtonElement>("#reset-confirm-yes");
+const resetConfirmNoButton = document.querySelector<HTMLButtonElement>("#reset-confirm-no");
 const popupRoot = document.querySelector<HTMLElement>(".popup");
 
 let settings: ExtensionSettings;
+let isResetConfirmationVisible = false;
 
 async function init(): Promise<void> {
   if (
@@ -27,7 +31,10 @@ async function init(): Promise<void> {
     matchTypeInputs.length === 0 ||
     !formError ||
     !ruleList ||
-    !resetDefaultsButton
+    !resetDefaultsButton ||
+    !resetConfirmation ||
+    !resetConfirmYesButton ||
+    !resetConfirmNoButton
   ) {
     throw new Error("Popup UI failed to initialize.");
   }
@@ -86,6 +93,7 @@ async function init(): Promise<void> {
     await saveSettings(settings);
     patternInput.value = "";
     setSelectedMatchType("literal");
+    hideResetConfirmation();
     renderRuleList(settings, true);
   });
 
@@ -127,13 +135,23 @@ async function init(): Promise<void> {
     };
 
     await saveSettings(settings);
+    hideResetConfirmation();
     renderRuleList(settings, true);
   });
 
   resetDefaultsButton.addEventListener("click", async () => {
+    showResetConfirmation();
+  });
+
+  resetConfirmYesButton.addEventListener("click", async () => {
     settings = buildResetSettings(settings);
     await saveSettings(settings);
+    hideResetConfirmation();
     renderRuleList(settings, true);
+  });
+
+  resetConfirmNoButton.addEventListener("click", () => {
+    hideResetConfirmation();
   });
 }
 
@@ -144,6 +162,7 @@ function render(nextSettings: ExtensionSettings): void {
 
   enabledToggle.checked = nextSettings.enabled;
   autohideToggle.checked = nextSettings.autoHideDetected;
+  renderResetConfirmation();
   renderRuleList(nextSettings);
 }
 
@@ -224,6 +243,25 @@ function setSelectedMatchType(matchType: MatchType): void {
   for (const input of matchTypeInputs) {
     input.checked = input.value === matchType;
   }
+}
+
+function showResetConfirmation(): void {
+  isResetConfirmationVisible = true;
+  renderResetConfirmation();
+}
+
+function hideResetConfirmation(): void {
+  isResetConfirmationVisible = false;
+  renderResetConfirmation();
+}
+
+function renderResetConfirmation(): void {
+  if (!resetDefaultsButton || !resetConfirmation) {
+    return;
+  }
+
+  resetDefaultsButton.hidden = isResetConfirmationVisible;
+  resetConfirmation.hidden = !isResetConfirmationVisible;
 }
 
 function setError(message: string): void {

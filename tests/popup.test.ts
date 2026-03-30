@@ -42,7 +42,14 @@ const popupMarkup = `
     <section class="panel">
       <div class="panel__header">
         <h2>Rules</h2>
-        <button id="reset-defaults" type="button" class="ghost-button">Reset defaults</button>
+        <div class="panel__actions">
+          <button id="reset-defaults" type="button" class="ghost-button">Reset defaults</button>
+          <div id="reset-confirmation" class="reset-confirmation" hidden>
+            <span class="reset-confirmation__text">Reset all rules?</span>
+            <button id="reset-confirm-yes" type="button" class="ghost-button reset-confirmation__button">Yes</button>
+            <button id="reset-confirm-no" type="button" class="ghost-button reset-confirmation__button">No</button>
+          </div>
+        </div>
       </div>
       <ul id="rule-list" class="rule-list"></ul>
     </section>
@@ -76,12 +83,7 @@ const saveSettingsMock = vi.fn(async (settings: ExtensionSettings) => {
 const buildResetSettingsMock = vi.fn((settings: ExtensionSettings) => ({
   enabled: settings.enabled,
   autoHideDetected: settings.autoHideDetected,
-  rules: [
-    ...cloneDefaultRules(),
-    ...settings.rules
-      .filter((rule) => rule.source === "user")
-      .map((rule) => ({ ...rule })),
-  ],
+  rules: cloneDefaultRules(),
 }));
 
 vi.mock("../src/shared/storage", () => ({
@@ -178,10 +180,36 @@ describe("popup UI", () => {
     });
   });
 
-  it("deletes default rules and reset restores defaults while preserving user rules", async () => {
+  it("shows inline reset confirmation and cancels cleanly on no", async () => {
     currentSettings = {
       enabled: true,
       autoHideDetected: false,
+      rules: [...cloneDefaultRules(), createUserRule("user-literal-rule", "ship fast", "literal")],
+    };
+
+    await mountPopup();
+
+    document.querySelector<HTMLButtonElement>("#reset-defaults")?.click();
+    await flushUi();
+
+    expect(document.querySelector<HTMLElement>("#reset-confirmation")?.hidden).toBe(false);
+    expect(document.querySelector<HTMLElement>("#reset-confirmation")?.textContent).toContain("Reset all rules?");
+    expect(document.querySelector<HTMLButtonElement>("#reset-defaults")?.hidden).toBe(true);
+    expect(buildResetSettingsMock).not.toHaveBeenCalled();
+
+    document.querySelector<HTMLButtonElement>("#reset-confirm-no")?.click();
+    await flushUi();
+
+    expect(document.querySelector<HTMLElement>("#reset-confirmation")?.hidden).toBe(true);
+    expect(document.querySelector<HTMLButtonElement>("#reset-defaults")?.hidden).toBe(false);
+    expect(currentSettings.rules.some((rule) => rule.id === "user-literal-rule")).toBe(true);
+    expect(buildResetSettingsMock).not.toHaveBeenCalled();
+  });
+
+  it("deletes default rules and confirmed reset replaces the list with shipped defaults only", async () => {
+    currentSettings = {
+      enabled: false,
+      autoHideDetected: true,
       rules: [...cloneDefaultRules(), createUserRule("user-literal-rule", "ship fast", "literal")],
     };
 
@@ -196,9 +224,16 @@ describe("popup UI", () => {
 
     document.querySelector<HTMLButtonElement>("#reset-defaults")?.click();
     await flushUi();
+    document.querySelector<HTMLButtonElement>("#reset-confirm-yes")?.click();
+    await flushUi();
 
+    expect(currentSettings.enabled).toBe(false);
+    expect(currentSettings.autoHideDetected).toBe(true);
     expect(currentSettings.rules.some((rule) => rule.id === "default-changes-everything")).toBe(true);
-    expect(currentSettings.rules.some((rule) => rule.id === "user-literal-rule")).toBe(true);
+    expect(currentSettings.rules.some((rule) => rule.id === "user-literal-rule")).toBe(false);
+    expect(currentSettings.rules).toHaveLength(cloneDefaultRules().length);
+    expect(currentSettings.rules.every((rule) => rule.source === "default")).toBe(true);
+    expect(document.querySelector<HTMLElement>("#reset-confirmation")?.hidden).toBe(true);
   });
 
   it("does not rerender or reset scroll when a rule checkbox changes", async () => {
@@ -228,7 +263,7 @@ describe("popup UI", () => {
     expect(currentSettings.rules[0]?.enabled).toBe(false);
   });
 
-  it("preserves scroll position when rerendering after delete and reset", async () => {
+  it("preserves scroll position when rerendering after delete and confirmed reset", async () => {
     await mountPopup();
 
     const ruleList = document.querySelector<HTMLUListElement>("#rule-list");
@@ -255,6 +290,9 @@ describe("popup UI", () => {
 
     document.documentElement.scrollTop = 140;
     document.querySelector<HTMLButtonElement>("#reset-defaults")?.click();
+    await flushUi();
+    expect(replaceChildrenSpy).toHaveBeenCalledTimes(1);
+    document.querySelector<HTMLButtonElement>("#reset-confirm-yes")?.click();
     await flushUi();
 
     expect(replaceChildrenSpy).toHaveBeenCalledTimes(2);

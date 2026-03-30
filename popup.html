@@ -50,9 +50,20 @@
       <section class="panel">
         <div class="panel__header">
           <h2>Rules</h2>
-          <button id="reset-defaults" type="button" class="ghost-button">
-            Reset defaults
-          </button>
+          <div class="panel__actions">
+            <button id="reset-defaults" type="button" class="ghost-button">
+              Reset defaults
+            </button>
+            <div id="reset-confirmation" class="reset-confirmation" hidden>
+              <span class="reset-confirmation__text">Reset all rules?</span>
+              <button id="reset-confirm-yes" type="button" class="ghost-button reset-confirmation__button">
+                Yes
+              </button>
+              <button id="reset-confirm-no" type="button" class="ghost-button reset-confirmation__button">
+                No
+              </button>
+            </div>
+          </div>
         </div>
         <ul id="rule-list" class="rule-list"></ul>
       </section>
