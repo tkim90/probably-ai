@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Probably AI</title>
+  </head>
+  <body>
+    <main class="popup">
+      <header class="popup__header">
+        <p class="popup__eyebrow">Reddit detector</p>
+        <h1>Probably AI</h1>
+        <p class="popup__copy">
+          Flag posts and comments that match your phrases or regex rules.
+        </p>
+      </header>
+
+      <section class="panel">
+        <label class="toggle-row" for="enabled-toggle">
+          <span class="toggle-row__label">Detection enabled</span>
+          <input id="enabled-toggle" type="checkbox" />
+        </label>
+      </section>
+
+      <section class="panel">
+        <form id="add-rule-form" class="rule-form">
+          <label class="rule-form__label" for="pattern-input">Add phrase or regex</label>
+          <select id="match-type-input">
+            <option value="literal">Literal phrase</option>
+            <option value="regex">Regex</option>
+          </select>
+          <textarea
+            id="pattern-input"
+            rows="3"
+            placeholder="Example: changes everything"
+          ></textarea>
+          <p id="form-error" class="error" hidden></p>
+          <button id="add-rule-button" type="submit">Add rule</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="panel__header">
+          <h2>Rules</h2>
+          <button id="reset-defaults" type="button" class="ghost-button">
+            Reset defaults
+          </button>
+        </div>
+        <ul id="rule-list" class="rule-list"></ul>
+      </section>
+    </main>
+
+    <script type="module" src="/src/popup.ts"></script>
+  </body>
+</html>

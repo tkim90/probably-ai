@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Probably AI",
+  "version": "0.1.0",
+  "description": "Flags sociela media posts and comments that were likely AI generated.",
+  "permissions": [
+    "storage"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Probably AI"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.reddit.com/*",
+        "https://old.reddit.com/*"
+      ],
+      "js": [
+        "assets/content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
