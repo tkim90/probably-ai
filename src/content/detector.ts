@@ -131,7 +131,7 @@ export function scanRedditDocument(
     }
 
     if (threadManaged && candidate.platform === "current") {
-      syncBadge(candidate, false);
+      syncBadge(candidate, matched);
       syncCollapse(candidate, false, false);
 
       if (!matched) {

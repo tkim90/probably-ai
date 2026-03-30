@@ -158,7 +158,7 @@ describe("scanRedditDocument", () => {
     const styles = document.head.textContent ?? "";
     const icon = button?.querySelector<HTMLImageElement>("img");
 
-    expect(document.querySelectorAll(BADGE_SELECTOR)).toHaveLength(0);
+    expect(document.querySelectorAll(BADGE_SELECTOR)).toHaveLength(2);
     expect(document.querySelectorAll(COLLAPSE_SELECTOR)).toHaveLength(0);
     expect(document.querySelectorAll(THREAD_FILTER_SELECTOR)).toHaveLength(1);
     expect(thread?.firstElementChild?.matches(THREAD_FILTER_SELECTOR)).toBe(true);
