@@ -1,7 +1,11 @@
 import {
   BADGE_SELECTOR,
+  COLLAPSE_SELECTOR,
   INTERNAL_STYLE_ID,
-  clearBadges,
+  THREAD_FILTER_SELECTOR,
+  THREAD_FILTER_TOGGLE_SELECTOR,
+  TOGGLE_SELECTOR,
+  clearInjectedUi,
   scanRedditDocument,
 } from "./detector";
 import { STORAGE_KEY, getSettings } from "../shared/storage";
@@ -39,8 +43,13 @@ function start(): void {
 async function refresh(): Promise<void> {
   currentSettings = await getSettings();
   withObserverPaused(() => {
-    clearBadges(document);
-    scanRedditDocument(document, currentSettings as ExtensionSettings, window.location.hostname);
+    clearInjectedUi(document);
+    scanRedditDocument(
+      document,
+      currentSettings as ExtensionSettings,
+      window.location.hostname,
+      window.location.pathname,
+    );
   });
 }
 
@@ -61,7 +70,12 @@ function handleMutations(mutations: MutationRecord[]): void {
     }
 
     withObserverPaused(() => {
-      scanRedditDocument(document, currentSettings as ExtensionSettings, window.location.hostname);
+      scanRedditDocument(
+        document,
+        currentSettings as ExtensionSettings,
+        window.location.hostname,
+        window.location.pathname,
+      );
     });
   }, 175);
 }
@@ -89,7 +103,13 @@ function isInternalElement(element: Element | null): boolean {
   return (
     element.id === INTERNAL_STYLE_ID ||
     element.matches(BADGE_SELECTOR) ||
-    element.closest(BADGE_SELECTOR) !== null
+    element.matches(COLLAPSE_SELECTOR) ||
+    element.matches(TOGGLE_SELECTOR) ||
+    element.matches(THREAD_FILTER_SELECTOR) ||
+    element.matches(THREAD_FILTER_TOGGLE_SELECTOR) ||
+    element.closest(BADGE_SELECTOR) !== null ||
+    element.closest(COLLAPSE_SELECTOR) !== null ||
+    element.closest(THREAD_FILTER_SELECTOR) !== null
   );
 }
 

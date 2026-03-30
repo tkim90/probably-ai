@@ -8,27 +8,35 @@
   <body>
     <main class="popup">
       <header class="popup__header">
-        <p class="popup__eyebrow">Reddit detector</p>
         <h1>Probably AI</h1>
-        <p class="popup__copy">
-          Flag posts and comments that match your phrases or regex rules.
-        </p>
       </header>
 
       <section class="panel">
-        <label class="toggle-row" for="enabled-toggle">
-          <span class="toggle-row__label">Detection enabled</span>
-          <input id="enabled-toggle" type="checkbox" />
-        </label>
+        <div class="toggle-stack">
+          <label class="toggle-row" for="enabled-toggle">
+            <span class="toggle-row__label">Detection enabled</span>
+            <input id="enabled-toggle" type="checkbox" />
+          </label>
+          <label class="toggle-row" for="autohide-toggle">
+            <span class="toggle-row__label">Auto-hide detected content</span>
+            <input id="autohide-toggle" type="checkbox" />
+          </label>
+        </div>
       </section>
 
       <section class="panel">
         <form id="add-rule-form" class="rule-form">
-          <label class="rule-form__label" for="pattern-input">Add phrase or regex</label>
-          <select id="match-type-input">
-            <option value="literal">Literal phrase</option>
-            <option value="regex">Regex</option>
-          </select>
+          <fieldset class="match-type-group">
+            <legend class="sr-only">Rule type</legend>
+            <label class="match-type-option" for="match-type-literal">
+              <input id="match-type-literal" name="match-type" type="radio" value="literal" checked />
+              <span>Literal phrase</span>
+            </label>
+            <label class="match-type-option" for="match-type-regex">
+              <input id="match-type-regex" name="match-type" type="radio" value="regex" />
+              <span>Regex</span>
+            </label>
+          </fieldset>
           <textarea
             id="pattern-input"
             rows="3"

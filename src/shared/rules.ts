@@ -6,6 +6,7 @@ const RULE_FLAGS = "iu";
 export function createDefaultSettings(): ExtensionSettings {
   return {
     enabled: true,
+    autoHideDetected: false,
     rules: cloneDefaultRules(),
   };
 }
@@ -45,6 +46,7 @@ export function normalizeSettings(
 
   return {
     enabled: candidate.enabled ?? true,
+    autoHideDetected: candidate.autoHideDetected ?? false,
     rules:
       normalizedRules.length === 0
         ? cloneDefaultRules()

@@ -63,4 +63,17 @@ describe("settings normalization", () => {
   it("falls back to defaults when storage is empty", () => {
     expect(normalizeSettings(undefined)).toEqual(createDefaultSettings());
   });
+
+  it("adds autoHideDetected=false for older stored settings", () => {
+    expect(
+      normalizeSettings({
+        enabled: true,
+        rules: DEFAULT_RULES,
+      }),
+    ).toEqual({
+      enabled: true,
+      autoHideDetected: false,
+      rules: DEFAULT_RULES,
+    });
+  });
 });

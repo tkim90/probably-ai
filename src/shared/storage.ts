@@ -16,6 +16,7 @@ export async function getSettings(): Promise<ExtensionSettings> {
   const needsSeed =
     !stored ||
     typeof stored.enabled !== "boolean" ||
+    typeof stored.autoHideDetected !== "boolean" ||
     !Array.isArray(stored.rules) ||
     stored.rules.length === 0 ||
     JSON.stringify(stored) !== JSON.stringify(normalized);
@@ -31,6 +32,7 @@ export async function saveSettings(settings: ExtensionSettings): Promise<void> {
   await chrome.storage.sync.set({
     [STORAGE_KEY]: {
       enabled: settings.enabled,
+      autoHideDetected: settings.autoHideDetected,
       rules: settings.rules.map((rule) => ({ ...rule })),
     },
   });
@@ -39,6 +41,7 @@ export async function saveSettings(settings: ExtensionSettings): Promise<void> {
 export function buildResetSettings(settings: ExtensionSettings): ExtensionSettings {
   return {
     enabled: settings.enabled,
+    autoHideDetected: settings.autoHideDetected,
     rules: [
       ...cloneDefaultRules(),
       ...settings.rules

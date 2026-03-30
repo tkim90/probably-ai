@@ -5,21 +5,26 @@ import { createUserRule, validateRulePattern } from "./shared/rules";
 import type { ExtensionSettings, MatchType } from "./shared/types";
 
 const enabledToggle = document.querySelector<HTMLInputElement>("#enabled-toggle");
+const autohideToggle = document.querySelector<HTMLInputElement>("#autohide-toggle");
 const addRuleForm = document.querySelector<HTMLFormElement>("#add-rule-form");
 const patternInput = document.querySelector<HTMLTextAreaElement>("#pattern-input");
-const matchTypeInput = document.querySelector<HTMLSelectElement>("#match-type-input");
+const matchTypeInputs = Array.from(
+  document.querySelectorAll<HTMLInputElement>("input[name='match-type']"),
+);
 const formError = document.querySelector<HTMLParagraphElement>("#form-error");
 const ruleList = document.querySelector<HTMLUListElement>("#rule-list");
 const resetDefaultsButton = document.querySelector<HTMLButtonElement>("#reset-defaults");
+const popupRoot = document.querySelector<HTMLElement>(".popup");
 
 let settings: ExtensionSettings;
 
 async function init(): Promise<void> {
   if (
     !enabledToggle ||
+    !autohideToggle ||
     !addRuleForm ||
     !patternInput ||
-    !matchTypeInput ||
+    matchTypeInputs.length === 0 ||
     !formError ||
     !ruleList ||
     !resetDefaultsButton
@@ -37,7 +42,15 @@ async function init(): Promise<void> {
     };
 
     await saveSettings(settings);
-    render(settings);
+  });
+
+  autohideToggle.addEventListener("change", async () => {
+    settings = {
+      ...settings,
+      autoHideDetected: autohideToggle.checked,
+    };
+
+    await saveSettings(settings);
   });
 
   addRuleForm.addEventListener("submit", async (event) => {
@@ -45,7 +58,7 @@ async function init(): Promise<void> {
     clearError();
 
     const pattern = patternInput.value.trim();
-    const matchType = (matchTypeInput.value as MatchType) || "literal";
+    const matchType = getSelectedMatchType();
     if (!pattern) {
       setError(matchType === "literal" ? "Enter a phrase before saving." : "Enter a regex before saving.");
       return;
@@ -72,8 +85,8 @@ async function init(): Promise<void> {
 
     await saveSettings(settings);
     patternInput.value = "";
-    matchTypeInput.value = "literal";
-    render(settings);
+    setSelectedMatchType("literal");
+    renderRuleList(settings, true);
   });
 
   ruleList.addEventListener("change", async (event) => {
@@ -95,7 +108,6 @@ async function init(): Promise<void> {
     };
 
     await saveSettings(settings);
-    render(settings);
   });
 
   ruleList.addEventListener("click", async (event) => {
@@ -115,79 +127,103 @@ async function init(): Promise<void> {
     };
 
     await saveSettings(settings);
-    render(settings);
+    renderRuleList(settings, true);
   });
 
   resetDefaultsButton.addEventListener("click", async () => {
     settings = buildResetSettings(settings);
     await saveSettings(settings);
-    render(settings);
+    renderRuleList(settings, true);
   });
 }
 
 function render(nextSettings: ExtensionSettings): void {
-  if (!enabledToggle || !ruleList) {
+  if (!enabledToggle || !autohideToggle) {
     return;
   }
 
   enabledToggle.checked = nextSettings.enabled;
-  ruleList.replaceChildren(
-    ...nextSettings.rules.map((rule) => {
-      const item = document.createElement("li");
-      item.className = "rule-card";
+  autohideToggle.checked = nextSettings.autoHideDetected;
+  renderRuleList(nextSettings);
+}
 
-      const topLine = document.createElement("div");
-      topLine.className = "rule-card__topline";
+function renderRuleList(nextSettings: ExtensionSettings, preserveScroll = false): void {
+  if (!ruleList) {
+    return;
+  }
 
-      const sourcePill = document.createElement("span");
-      sourcePill.className = "pill";
-      sourcePill.textContent = rule.source;
+  const renderCards = () => {
+    ruleList.replaceChildren(
+      ...nextSettings.rules.map((rule) => {
+        const item = document.createElement("li");
+        item.className = "rule-card";
 
-      const matchTypePill = document.createElement("span");
-      matchTypePill.className = "pill";
-      matchTypePill.textContent = rule.matchType;
+        const pattern = document.createElement("p");
+        pattern.className = "rule-card__pattern";
+        pattern.textContent = rule.pattern;
 
-      const badges = document.createElement("div");
-      badges.className = "rule-card__badges";
-      badges.append(sourcePill, matchTypePill);
+        const controls = document.createElement("div");
+        controls.className = "rule-card__controls";
 
-      const pattern = document.createElement("p");
-      pattern.className = "rule-card__pattern";
-      pattern.textContent = rule.pattern;
+        const toggleLabel = document.createElement("label");
+        toggleLabel.className = "rule-card__toggle";
 
-      const controls = document.createElement("div");
-      controls.className = "rule-card__controls";
+        const toggle = document.createElement("input");
+        toggle.type = "checkbox";
+        toggle.checked = rule.enabled;
+        toggle.dataset.action = "toggle-rule";
+        toggle.dataset.ruleId = rule.id;
+        toggle.setAttribute("aria-label", `Toggle rule ${rule.pattern}`);
 
-      const toggleLabel = document.createElement("label");
-      toggleLabel.className = "rule-card__toggle";
-
-      const toggle = document.createElement("input");
-      toggle.type = "checkbox";
-      toggle.checked = rule.enabled;
-      toggle.dataset.action = "toggle-rule";
-      toggle.dataset.ruleId = rule.id;
-
-      const toggleText = document.createElement("span");
-      toggleText.textContent = rule.enabled ? "Enabled" : "Disabled";
-
-      toggleLabel.append(toggle, toggleText);
-      controls.append(toggleLabel);
-
-      if (rule.source === "user") {
         const deleteButton = document.createElement("button");
         deleteButton.type = "button";
         deleteButton.className = "rule-card__delete";
         deleteButton.dataset.action = "delete-rule";
         deleteButton.dataset.ruleId = rule.id;
         deleteButton.textContent = "Delete";
-        controls.append(deleteButton);
-      }
 
-      topLine.append(badges);
-      item.append(topLine, pattern, controls);
-      return item;
-    }),
-  );
+        toggleLabel.append(toggle);
+        controls.append(toggleLabel, deleteButton);
+        item.append(pattern, controls);
+        return item;
+      }),
+    );
+  };
+
+  if (!preserveScroll) {
+    renderCards();
+    return;
+  }
+
+  const scrollTargets = collectScrollTargets();
+  const scrollPositions = scrollTargets.map((target) => [target, target.scrollTop] as const);
+  renderCards();
+
+  for (const [target, scrollTop] of scrollPositions) {
+    target.scrollTop = scrollTop;
+  }
+}
+
+function collectScrollTargets(): HTMLElement[] {
+  const candidates = [
+    document.scrollingElement,
+    document.documentElement,
+    document.body,
+    popupRoot,
+  ].filter((element): element is HTMLElement => element instanceof HTMLElement);
+
+  return Array.from(new Set(candidates));
+}
+
+function getSelectedMatchType(): MatchType {
+  const selected = matchTypeInputs.find((input) => input.checked);
+  return selected?.value === "regex" ? "regex" : "literal";
+}
+
+function setSelectedMatchType(matchType: MatchType): void {
+  for (const input of matchTypeInputs) {
+    input.checked = input.value === matchType;
+  }
 }
 
 function setError(message: string): void {

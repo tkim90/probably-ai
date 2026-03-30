@@ -2,44 +2,56 @@
   box-sizing: border-box;
 }
 
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
 body {
   margin: 0;
   min-width: 360px;
-  background: #f6f1ea;
-  color: #1d1a16;
-  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  background: #f5f4ef;
+  color: #111111;
+  font-family: inherit;
 }
 
 button,
 textarea,
-select,
 input {
   font: inherit;
 }
 
 button {
-  border: 0;
+  border: 1px solid #111111;
   border-radius: 10px;
-  background: #ba2f2f;
-  color: #fff;
+  background: #111111;
+  color: #f8f7f2;
   cursor: pointer;
-  font-weight: 700;
+  font-weight: 600;
   padding: 0.7rem 0.95rem;
 }
 
 button:hover {
-  background: #9f2525;
+  background: #222222;
+}
+
+button:focus-visible,
+textarea:focus-visible,
+input:focus-visible {
+  outline: 2px solid #111111;
+  outline-offset: 2px;
 }
 
 .ghost-button {
+  border: 0;
   background: transparent;
-  color: #7a2f2f;
+  color: #111111;
   padding: 0;
 }
 
 .ghost-button:hover {
   background: transparent;
-  color: #551f1f;
+  text-decoration: underline;
 }
 
 .popup {
@@ -50,29 +62,15 @@ button:hover {
 
 .popup__header h1 {
   margin: 0;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 1.55rem;
-}
-
-.popup__eyebrow {
-  margin: 0 0 0.2rem;
-  color: #8c3b2e;
-  font-size: 0.75rem;
+  font-size: 1.45rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.popup__copy {
-  margin: 0.3rem 0 0;
-  color: #544b41;
-  font-size: 0.92rem;
+  letter-spacing: -0.02em;
 }
 
 .panel {
-  border: 1px solid #dfd2c1;
+  border: 1px solid #d8d5ca;
   border-radius: 16px;
-  background: #fffaf4;
+  background: #fbfaf6;
   padding: 0.95rem;
 }
 
@@ -89,6 +87,11 @@ button:hover {
   font-size: 1rem;
 }
 
+.toggle-stack {
+  display: grid;
+  gap: 0.9rem;
+}
+
 .toggle-row {
   display: flex;
   align-items: center;
@@ -97,38 +100,50 @@ button:hover {
 }
 
 .toggle-row__label {
-  font-weight: 700;
+  font-weight: 600;
+}
+
+.toggle-row input,
+.rule-card__toggle input,
+.match-type-option input {
+  accent-color: #111111;
 }
 
 .rule-form {
   display: grid;
-  gap: 0.65rem;
+  gap: 0.7rem;
 }
 
-.rule-form__label {
-  font-weight: 700;
+.match-type-group {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  border: 0;
+  margin: 0;
+  padding: 0;
 }
 
-#match-type-input,
+.match-type-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #111111;
+  font-size: 0.92rem;
+}
+
 #pattern-input {
   width: 100%;
-  border: 1px solid #d5c6b5;
+  border: 1px solid #d0cdc1;
   border-radius: 12px;
-  background: #fff;
-}
-
-#match-type-input {
-  padding: 0.65rem 0.75rem;
-}
-
-#pattern-input {
-  resize: vertical;
+  background: #fffdf8;
+  color: #111111;
   padding: 0.75rem;
+  resize: vertical;
 }
 
 .error {
   margin: 0;
-  color: #ba2f2f;
+  color: #111111;
   font-size: 0.84rem;
 }
 
@@ -142,43 +157,19 @@ button:hover {
 
 .rule-card {
   display: grid;
-  gap: 0.65rem;
-  border: 1px solid #eadccc;
+  gap: 0.7rem;
+  border: 1px solid #ddd9cf;
   border-radius: 14px;
-  background: #fff;
-  padding: 0.8rem;
-}
-
-.rule-card__topline {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.8rem;
-}
-
-.rule-card__badges {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
+  background: #fffdf8;
+  padding: 0.85rem;
 }
 
 .rule-card__pattern {
   margin: 0;
-  font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 0.82rem;
+  color: #111111;
+  font-size: 0.95rem;
+  line-height: 1.35;
   overflow-wrap: anywhere;
-}
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  background: #f2e0c7;
-  color: #6f4d1f;
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 0.18rem 0.5rem;
-  text-transform: capitalize;
 }
 
 .rule-card__controls {
@@ -191,18 +182,28 @@ button:hover {
 .rule-card__toggle {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  color: #55483d;
-  font-size: 0.9rem;
 }
 
 .rule-card__delete {
+  border: 0;
   background: transparent;
-  color: #8a3030;
+  color: #111111;
   padding: 0;
 }
 
 .rule-card__delete:hover {
   background: transparent;
-  color: #631d1d;
+  text-decoration: underline;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

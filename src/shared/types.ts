@@ -11,6 +11,7 @@ export interface StoredRule {
 
 export interface ExtensionSettings {
   enabled: boolean;
+  autoHideDetected: boolean;
   rules: StoredRule[];
 }
 
