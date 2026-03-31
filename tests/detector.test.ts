@@ -57,7 +57,31 @@ describe("scanRedditDocument", () => {
     expect(styles).toContain("color: #f5f1e8");
   });
 
-  it("keeps feed posts visible and only marks them when auto-hide is on", () => {
+  it("appends badge to first child of credit-bar when author-metadata has not yet rendered", () => {
+    document.body.innerHTML = `
+      <shreddit-post>
+        <div slot="credit-bar">
+          <span>r/test · 3h ago</span>
+        </div>
+        <a slot="title">This changes everything for solo founders</a>
+        <div slot="text-body">No body</div>
+      </shreddit-post>
+    `;
+
+    const matches = scanRedditDocument(document, createSettings(), "www.reddit.com", "/r/test/");
+    const creditBar = document.querySelector<HTMLElement>("[slot='credit-bar']");
+    const firstChild = creditBar?.children[0] as HTMLElement | undefined;
+    const badge = document.querySelector<HTMLElement>(BADGE_SELECTOR);
+    const directBadgeChild = Array.from(creditBar?.children ?? []).find((child) =>
+      child.matches(BADGE_SELECTOR),
+    );
+
+    expect(matches).toBe(1);
+    expect(badge?.parentElement).toBe(firstChild);
+    expect(directBadgeChild).toBeUndefined();
+  });
+
+  it("dims feed post content when auto-hide is on", () => {
     document.body.innerHTML = `
       <shreddit-post>
         <div slot="credit-bar">
@@ -95,6 +119,39 @@ describe("scanRedditDocument", () => {
     expect(title?.style.display ?? "").toBe("");
     expect(body?.style.display ?? "").toBe("");
     expect(actions?.style.display ?? "").toBe("");
+    expect(title?.style.opacity).toBe("0.56");
+    expect(body?.style.opacity).toBe("0.56");
+  });
+
+  it("does not dim feed posts when auto-hide is off", () => {
+    document.body.innerHTML = `
+      <shreddit-post>
+        <div slot="credit-bar">
+          <div slot="author-metadata" data-testid="author-cluster">
+            <span>u/example</span>
+            <span>1 day ago</span>
+          </div>
+        </div>
+        <a slot="title">This changes everything for solo founders</a>
+        <div slot="text-body">Founders should validate with real customers first.</div>
+      </shreddit-post>
+    `;
+
+    scanRedditDocument(
+      document,
+      createSettings({
+        autoHideDetected: false,
+      }),
+      "www.reddit.com",
+      "/r/test/",
+    );
+
+    const title = document.querySelector<HTMLElement>("[slot='title']");
+    const body = document.querySelector<HTMLElement>("[slot='text-body']");
+
+    expect(document.querySelectorAll(BADGE_SELECTOR)).toHaveLength(1);
+    expect(title?.style.opacity ?? "").toBe("");
+    expect(body?.style.opacity ?? "").toBe("");
   });
 
   it("does not auto-hide the main submission on a post page", () => {

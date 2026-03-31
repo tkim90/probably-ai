@@ -157,7 +157,12 @@ export function scanRedditDocument(
 
     syncBadge(candidate, matched);
     syncCollapse(candidate, matched, shouldIndividuallyHide(candidate, settings.autoHideDetected));
-    undimCandidate(candidate);
+
+    if (matched && candidate.kind === "post" && !candidate.isMainSubmission && settings.autoHideDetected) {
+      dimCandidate(candidate);
+    } else {
+      undimCandidate(candidate);
+    }
 
     if (threadManaged) {
       if (!matched) {
@@ -944,7 +949,7 @@ function collectCurrentRedditPosts(
         badgeTarget,
         placement: controlTarget ? "append" : "prepend",
         contentTargets,
-        dimTargets: [],
+        dimTargets: collectCurrentPostDimTargets(container),
         text,
         isMainSubmission: isDetailPage && index === 0,
       });
@@ -1024,7 +1029,7 @@ function collectOldRedditPosts(
         badgeTarget: indicatorTarget,
         placement: "append",
         contentTargets,
-        dimTargets: [],
+        dimTargets: collectOldPostDimTargets(container),
         text,
         isMainSubmission: isDetailPage && index === 0,
       });
@@ -1188,6 +1193,37 @@ function collectCurrentCommentDimTargets(container: HTMLElement): HTMLElement[] 
   return collected.length > 0 ? collected : [container];
 }
 
+function collectCurrentPostDimTargets(container: HTMLElement): HTMLElement[] {
+  const selectors = [
+    "[slot='title']",
+    "a[data-testid='post-title-text']",
+    "[slot='text-body']",
+    "div[data-click-id='text']",
+    "div[data-adclicklocation='text-body']",
+    "[slot='post-media-container']",
+    "[data-testid='post-media-container']",
+    "img",
+    "video",
+  ];
+  return collectUniqueElements(container, selectors);
+}
+
+function collectOldPostDimTargets(container: HTMLElement): HTMLElement[] {
+  const directChildren = Array.from(container.children).filter(
+    (child): child is HTMLElement => child instanceof HTMLElement,
+  );
+  const collected = directChildren.filter((child) =>
+    child.matches(".midcol, .entry, .thumbnail"),
+  );
+
+  if (collected.length > 0) {
+    return collected;
+  }
+
+  const entry = container.querySelector<HTMLElement>(":scope > .entry");
+  return entry ? [entry] : [container];
+}
+
 function collectOldCommentDimTargets(container: HTMLElement): HTMLElement[] {
   const directChildren = Array.from(container.children).filter(
     (child): child is HTMLElement => child instanceof HTMLElement,
@@ -1235,7 +1271,7 @@ function findCurrentPostBadgeTarget(
   const broadCurrentSelectors = ["[slot='credit-bar']", "[data-testid='post-subheader']"];
   if (
     broadCurrentSelectors.some((selector) => controlTarget.matches(selector)) &&
-    controlTarget.childElementCount > 1
+    controlTarget.childElementCount >= 1
   ) {
     const firstVisualChild = Array.from(controlTarget.children).find(
       (child): child is HTMLElement =>
