@@ -49,7 +49,7 @@ describe("scanRedditDocument", () => {
 
     expect(matches).toBe(1);
     expect(document.querySelectorAll(BADGE_SELECTOR)).toHaveLength(1);
-    expect(badge?.textContent).toBe("🔴 Probably AI");
+    expect(badge?.textContent).toBe("Probably AI");
     expect(authorCluster?.querySelector(BADGE_SELECTOR)).not.toBeNull();
     expect(directBadgeChild).toBeUndefined();
     expect(overflowButton?.parentElement).toBe(metadataRow);

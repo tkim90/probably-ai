@@ -37,7 +37,8 @@
     {
       "resources": [
         "baseline-remove-red-eye.svg",
-        "baseline-disabled-visible.svg"
+        "baseline-disabled-visible.svg",
+        "baseline-warning.svg"
       ],
       "matches": [
         "https://reddit.com/*",

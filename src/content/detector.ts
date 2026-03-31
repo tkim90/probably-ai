@@ -18,10 +18,13 @@ const THREAD_FILTER_ICON_ATTRIBUTE = "data-probably-ai-thread-filter-icon";
 const THREAD_FILTER_LABEL_ATTRIBUTE = "data-probably-ai-thread-filter-label";
 const SHOW_FILTERED_COMMENTS_ICON = "baseline-remove-red-eye.svg";
 const HIDE_FILTERED_COMMENTS_ICON = "baseline-disabled-visible.svg";
+const BADGE_WARNING_ICON = "baseline-warning.svg";
 const SHOW_FILTERED_COMMENTS_ICON_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="#000000" style="opacity:1;"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5M12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5s5 2.24 5 5s-2.24 5-5 5m0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3s3-1.34 3-3s-1.34-3-3-3"/></svg>';
 const HIDE_FILTERED_COMMENTS_ICON_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="#000000" style="opacity:1;"><path d="M21.99 12.34c.01-.11.01-.23.01-.34c0-5.52-4.48-10-10-10S2 6.48 2 12c0 5.17 3.93 9.43 8.96 9.95a9.3 9.3 0 0 1-2.32-2.68A8.01 8.01 0 0 1 4 12c0-1.85.63-3.55 1.69-4.9l5.66 5.66c.56-.4 1.17-.73 1.82-1L7.1 5.69A7.9 7.9 0 0 1 12 4c4.24 0 7.7 3.29 7.98 7.45c.71.22 1.39.52 2.01.89M17 13c-3.18 0-5.9 1.87-7 4.5c1.1 2.63 3.82 4.5 7 4.5s5.9-1.87 7-4.5c-1.1-2.63-3.82-4.5-7-4.5m0 7a2.5 2.5 0 0 1 0-5a2.5 2.5 0 0 1 0 5m1.5-2.5c0 .83-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5s1.5.67 1.5 1.5"/></svg>';
+const BADGE_WARNING_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="#D4A017" style="opacity:1;"><path d="M1 21h22L12 2zm12-3h-2v-2h2zm0-4h-2v-4h2z"/></svg>';
 
 type Placement = "after" | "prepend" | "append";
 type CandidateKind = "post" | "comment";
@@ -68,6 +71,7 @@ let activeThreadGroups = new Map<string, ThreadGroup>();
 const FALLBACK_ICON_URLS: Record<string, string> = {
   [SHOW_FILTERED_COMMENTS_ICON]: createSvgDataUrl(SHOW_FILTERED_COMMENTS_ICON_SVG),
   [HIDE_FILTERED_COMMENTS_ICON]: createSvgDataUrl(HIDE_FILTERED_COMMENTS_ICON_SVG),
+  [BADGE_WARNING_ICON]: createSvgDataUrl(BADGE_WARNING_ICON_SVG),
 };
 
 export const BADGE_SELECTOR = `[${BADGE_ATTRIBUTE}="true"]`;
@@ -286,11 +290,17 @@ function ensureInjectedStyles(documentRef: Document): void {
       background: #363636;
       color: #f5f1e8;
       font-size: 0.72rem;
-      font-weight: 700;
+      font-weight: 400;
       line-height: 1;
       vertical-align: middle;
       white-space: nowrap;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .probably-ai-badge > span {
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
     }
 
     [${META_ROW_ATTRIBUTE}="true"] .probably-ai-badge {
@@ -475,10 +485,17 @@ function syncBadge(candidate: ScanCandidate, matched: boolean): void {
     return;
   }
 
-  const badge = candidate.badgeTarget.ownerDocument.createElement("span");
+  const doc = candidate.badgeTarget.ownerDocument;
+  const badge = doc.createElement("span");
   badge.className = "probably-ai-badge";
   badge.setAttribute(BADGE_ATTRIBUTE, "true");
-  badge.textContent = "🔴 Probably AI";
+
+  const iconWrapper = doc.createElement("span");
+  iconWrapper.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" fill="#D4A017"><path d="M1 21h22L12 2zm12-3h-2v-2h2zm0-4h-2v-4h2z"/></svg>';
+  iconWrapper.style.display = "flex";
+  badge.appendChild(iconWrapper);
+  badge.appendChild(doc.createTextNode("Probably AI"));
+
   moveIndicator(badge, candidate.badgeTarget, candidate.placement);
 }
 
