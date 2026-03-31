@@ -103,6 +103,10 @@ input:focus-visible {
   font-size: 0.88rem;
 }
 
+.reset-confirmation[hidden] {
+  display: none;
+}
+
 .reset-confirmation__text {
   font-weight: 500;
 }
