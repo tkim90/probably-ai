@@ -2,7 +2,7 @@ import { DEFAULT_RULES } from "../src/shared/defaultRules";
 import {
   compileRules,
   createDefaultSettings,
-  isRegexPattern,
+  findMatchingRules,
   matchesAnyRule,
   normalizeSettings,
   parseRulesText,
@@ -67,72 +67,89 @@ describe("rule matching", () => {
   });
 });
 
-describe("isRegexPattern", () => {
-  it("detects backslash-letter sequences as regex", () => {
-    expect(isRegexPattern("\\bword\\b")).toBe(true);
-    expect(isRegexPattern("\\s+hello")).toBe(true);
-    expect(isRegexPattern("\\d{3}-\\d{4}")).toBe(true);
+describe("findMatchingRules", () => {
+  it("returns all rules that match", () => {
+    const compiled = compileRules(DEFAULT_RULES);
+    const result = findMatchingRules("This changes everything — seriously.", compiled);
+    expect(result).toHaveLength(2);
+    expect(result.map((r) => r.pattern)).toContain("changes everything");
+    expect(result.map((r) => r.pattern)).toContain("\u2014");
   });
 
-  it("detects group constructs as regex", () => {
-    expect(isRegexPattern("(?i)test")).toBe(true);
-    expect(isRegexPattern("(?:foo|bar)")).toBe(true);
-    expect(isRegexPattern("(?=lookahead)")).toBe(true);
+  it("returns empty array when nothing matches", () => {
+    const compiled = compileRules(DEFAULT_RULES);
+    const result = findMatchingRules("Hello world.", compiled);
+    expect(result).toHaveLength(0);
   });
 
-  it("treats plain phrases as literal", () => {
-    expect(isRegexPattern("changes everything")).toBe(false);
-    expect(isRegexPattern("game changer")).toBe(false);
-    expect(isRegexPattern("—")).toBe(false);
-    expect(isRegexPattern("hello world!")).toBe(false);
+  it("returns only the rules that match", () => {
+    const compiled = compileRules(DEFAULT_RULES);
+    const result = findMatchingRules("This changes everything for founders.", compiled);
+    expect(result).toHaveLength(1);
+    expect(result[0].pattern).toBe("changes everything");
   });
 });
 
 describe("parseRulesText", () => {
-  it("parses multiline input into rules", () => {
-    const text = "changes everything\ngame changer\n(?i)\\btest\\b";
-    const rules = parseRulesText(text);
+  it("parses literal rules from phrases textarea", () => {
+    const rules = parseRulesText("changes everything\ngame changer", "literal");
 
-    expect(rules).toHaveLength(3);
+    expect(rules).toHaveLength(2);
     expect(rules[0].pattern).toBe("changes everything");
     expect(rules[0].matchType).toBe("literal");
     expect(rules[1].pattern).toBe("game changer");
     expect(rules[1].matchType).toBe("literal");
-    expect(rules[2].pattern).toBe("(?i)\\btest\\b");
-    expect(rules[2].matchType).toBe("regex");
+  });
+
+  it("parses regex rules from regex textarea", () => {
+    const rules = parseRulesText("(w|W)hy\n\\btest\\b", "regex");
+
+    expect(rules).toHaveLength(2);
+    expect(rules[0].pattern).toBe("(w|W)hy");
+    expect(rules[0].matchType).toBe("regex");
+    expect(rules[1].pattern).toBe("\\btest\\b");
+    expect(rules[1].matchType).toBe("regex");
   });
 
   it("filters blank lines", () => {
-    const rules = parseRulesText("hello\n\n\nworld\n");
+    const rules = parseRulesText("hello\n\n\nworld\n", "literal");
     expect(rules).toHaveLength(2);
   });
 
   it("trims whitespace from lines", () => {
-    const rules = parseRulesText("  hello  \n  world  ");
+    const rules = parseRulesText("  hello  \n  world  ", "literal");
     expect(rules[0].pattern).toBe("hello");
     expect(rules[1].pattern).toBe("world");
   });
 
   it("returns empty array for empty input", () => {
-    expect(parseRulesText("")).toHaveLength(0);
-    expect(parseRulesText("   \n  \n  ")).toHaveLength(0);
+    expect(parseRulesText("", "literal")).toHaveLength(0);
+    expect(parseRulesText("   \n  \n  ", "regex")).toHaveLength(0);
   });
 
   it("sets all rules as user source and enabled", () => {
-    const rules = parseRulesText("test rule");
+    const rules = parseRulesText("test rule", "literal");
     expect(rules[0].source).toBe("user");
     expect(rules[0].enabled).toBe(true);
   });
 });
 
 describe("rulesToText", () => {
-  it("joins rule patterns with newlines", () => {
-    expect(
-      rulesToText([
-        { id: "1", pattern: "hello", enabled: true, source: "user", matchType: "literal" },
-        { id: "2", pattern: "\\bworld\\b", enabled: true, source: "user", matchType: "regex" },
-      ]),
-    ).toBe("hello\n\\bworld\\b");
+  const mixed = [
+    { id: "1", pattern: "hello", enabled: true, source: "user" as const, matchType: "literal" as const },
+    { id: "2", pattern: "\\bworld\\b", enabled: true, source: "user" as const, matchType: "regex" as const },
+  ];
+
+  it("joins all rule patterns when no matchType filter given", () => {
+    expect(rulesToText(mixed)).toBe("hello\n\\bworld\\b");
+  });
+
+  it("filters to literal rules only", () => {
+    expect(rulesToText(mixed, "literal")).toBe("hello");
+  });
+
+  it("filters to regex rules only", () => {
+    expect(rulesToText(mixed, "regex")).toBe("\\bworld\\b");
   });
 
   it("returns empty string for empty rules", () => {

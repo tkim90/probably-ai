@@ -1,5 +1,5 @@
 import { cloneDefaultRules } from "./defaultRules";
-import type { CompiledRule, ExtensionSettings, StoredRule } from "./types";
+import type { CompiledRule, ExtensionSettings, MatchType, StoredRule } from "./types";
 
 const RULE_FLAGS = "iu";
 
@@ -101,13 +101,17 @@ export function compileRules(rules: StoredRule[]): CompiledRule[] {
   });
 }
 
-export function matchesAnyRule(text: string, rules: CompiledRule[]): boolean {
+export function findMatchingRules(text: string, rules: CompiledRule[]): CompiledRule[] {
   const normalizedText = normalizeForMatching(text);
 
-  return rules.some((rule) => {
+  return rules.filter((rule) => {
     rule.regex.lastIndex = 0;
     return rule.regex.test(rule.matchType === "literal" ? normalizedText : text);
   });
+}
+
+export function matchesAnyRule(text: string, rules: CompiledRule[]): boolean {
+  return findMatchingRules(text, rules).length > 0;
 }
 
 export function normalizeText(text: string): string {
@@ -138,20 +142,15 @@ function normalizeForMatching(value: string): string {
   return value.replace(/[‘’]/g, "’");
 }
 
-const REGEX_INDICATOR = /\\[a-zA-Z]|\(\?/;
-
-export function isRegexPattern(pattern: string): boolean {
-  return REGEX_INDICATOR.test(pattern);
-}
-
-export function parseRulesText(text: string): StoredRule[] {
+export function parseRulesText(text: string, matchType: MatchType): StoredRule[] {
   return text
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .map((line) => createUserRule(line, isRegexPattern(line) ? "regex" : "literal"));
+    .map((line) => createUserRule(line, matchType));
 }
 
-export function rulesToText(rules: StoredRule[]): string {
-  return rules.map((rule) => rule.pattern).join("\n");
+export function rulesToText(rules: StoredRule[], matchType?: MatchType): string {
+  const filtered = matchType ? rules.filter((rule) => rule.matchType === matchType) : rules;
+  return filtered.map((rule) => rule.pattern).join("\n");
 }

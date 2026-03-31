@@ -32,7 +32,10 @@ const popupMarkup = `
           </div>
         </div>
       </div>
-      <textarea id="rules-textarea" rows="8"></textarea>
+      <h3 class="textarea-label">Phrases</h3>
+      <textarea id="phrases-textarea" class="rules-textarea" rows="6"></textarea>
+      <h3 class="textarea-label">Regex</h3>
+      <textarea id="regex-textarea" class="rules-textarea" rows="4"></textarea>
     </section>
   </main>
 `;
@@ -81,12 +84,13 @@ async function mountPopup(): Promise<void> {
 }
 
 async function flushUi(): Promise<void> {
-  await Promise.resolve();
+  await vi.advanceTimersByTimeAsync(500);
   await Promise.resolve();
 }
 
 describe("popup UI", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     vi.clearAllMocks();
     currentSettings = {
       enabled: true,
@@ -99,64 +103,67 @@ describe("popup UI", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     document.body.innerHTML = "";
   });
 
-  it("populates textarea with stored rules on load", async () => {
+  it("populates both textareas with stored rules on load", async () => {
     await mountPopup();
 
-    const textarea = document.querySelector<HTMLTextAreaElement>("#rules-textarea");
-    expect(textarea?.value).toBe("changes everything\nhello\\d+");
+    const phrases = document.querySelector<HTMLTextAreaElement>("#phrases-textarea");
+    const regex = document.querySelector<HTMLTextAreaElement>("#regex-textarea");
+    expect(phrases?.value).toBe("changes everything");
+    expect(regex?.value).toBe("hello\\d+");
   });
 
-  it("saves rules when textarea content changes", async () => {
+  it("saves literal rules from phrases textarea", async () => {
     await mountPopup();
 
-    const textarea = document.querySelector<HTMLTextAreaElement>("#rules-textarea");
-    if (!textarea) throw new Error("Textarea not found.");
+    const phrases = document.querySelector<HTMLTextAreaElement>("#phrases-textarea");
+    if (!phrases) throw new Error("Phrases textarea not found.");
 
-    textarea.value = "game changer\n\\btest\\b";
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    phrases.value = "game changer\nship fast";
+    phrases.dispatchEvent(new Event("input", { bubbles: true }));
     await flushUi();
 
-    expect(currentSettings.rules).toHaveLength(2);
-    expect(currentSettings.rules[0]).toMatchObject({
-      pattern: "game changer",
-      matchType: "literal",
-    });
-    expect(currentSettings.rules[1]).toMatchObject({
-      pattern: "\\btest\\b",
-      matchType: "regex",
-    });
+    const literals = currentSettings.rules.filter((r) => r.matchType === "literal");
+    const regexes = currentSettings.rules.filter((r) => r.matchType === "regex");
+    expect(literals).toHaveLength(2);
+    expect(literals[0]).toMatchObject({ pattern: "game changer", matchType: "literal" });
+    expect(regexes).toHaveLength(1);
+    expect(regexes[0]).toMatchObject({ pattern: "hello\\d+", matchType: "regex" });
   });
 
-  it("auto-detects regex patterns with group constructs", async () => {
+  it("saves regex rules from regex textarea", async () => {
     await mountPopup();
 
-    const textarea = document.querySelector<HTMLTextAreaElement>("#rules-textarea");
-    if (!textarea) throw new Error("Textarea not found.");
+    const regex = document.querySelector<HTMLTextAreaElement>("#regex-textarea");
+    if (!regex) throw new Error("Regex textarea not found.");
 
-    textarea.value = "(?i)hello world";
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    regex.value = "(w|W)hy\n\\btest\\b";
+    regex.dispatchEvent(new Event("input", { bubbles: true }));
     await flushUi();
 
-    expect(currentSettings.rules[0]).toMatchObject({
-      pattern: "(?i)hello world",
-      matchType: "regex",
-    });
+    const literals = currentSettings.rules.filter((r) => r.matchType === "literal");
+    const regexes = currentSettings.rules.filter((r) => r.matchType === "regex");
+    expect(literals).toHaveLength(1);
+    expect(regexes).toHaveLength(2);
+    expect(regexes[0]).toMatchObject({ pattern: "(w|W)hy", matchType: "regex" });
+    expect(regexes[1]).toMatchObject({ pattern: "\\btest\\b", matchType: "regex" });
   });
 
   it("filters blank lines", async () => {
     await mountPopup();
 
-    const textarea = document.querySelector<HTMLTextAreaElement>("#rules-textarea");
-    if (!textarea) throw new Error("Textarea not found.");
+    const phrases = document.querySelector<HTMLTextAreaElement>("#phrases-textarea");
+    if (!phrases) throw new Error("Phrases textarea not found.");
 
-    textarea.value = "hello\n\n\nworld\n";
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    phrases.value = "hello\n\n\nworld\n";
+    phrases.dispatchEvent(new Event("input", { bubbles: true }));
     await flushUi();
 
-    expect(currentSettings.rules).toHaveLength(2);
+    const literals = currentSettings.rules.filter((r) => r.matchType === "literal");
+    expect(literals).toHaveLength(2);
   });
 
   it("shows inline reset confirmation and cancels cleanly on no", async () => {
@@ -184,7 +191,7 @@ describe("popup UI", () => {
     expect(buildResetSettingsMock).not.toHaveBeenCalled();
   });
 
-  it("confirmed reset replaces textarea with shipped defaults only", async () => {
+  it("confirmed reset replaces both textareas with shipped defaults only", async () => {
     currentSettings = {
       enabled: false,
       autoHideDetected: true,
@@ -193,10 +200,10 @@ describe("popup UI", () => {
 
     await mountPopup();
 
-    const textarea = document.querySelector<HTMLTextAreaElement>("#rules-textarea");
-    if (!textarea) throw new Error("Textarea not found.");
+    const phrases = document.querySelector<HTMLTextAreaElement>("#phrases-textarea");
+    if (!phrases) throw new Error("Phrases textarea not found.");
 
-    expect(textarea.value).toContain("ship fast");
+    expect(phrases.value).toContain("ship fast");
 
     document.querySelector<HTMLButtonElement>("#reset-defaults")?.click();
     await flushUi();
@@ -207,8 +214,9 @@ describe("popup UI", () => {
     expect(currentSettings.autoHideDetected).toBe(true);
     expect(currentSettings.rules).toHaveLength(cloneDefaultRules().length);
     expect(currentSettings.rules.every((rule) => rule.source === "default")).toBe(true);
-    expect(textarea.value).not.toContain("ship fast");
-    expect(textarea.value).toContain("changes everything");
+    expect(phrases.value).not.toContain("ship fast");
+    expect(phrases.value).toContain("changes everything");
+    expect(document.querySelector<HTMLTextAreaElement>("#regex-textarea")?.value).toBe("");
     expect(document.querySelector<HTMLElement>("#reset-confirmation")?.hidden).toBe(true);
   });
 });

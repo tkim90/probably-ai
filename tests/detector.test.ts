@@ -57,6 +57,23 @@ describe("scanRedditDocument", () => {
     expect(styles).toContain("color: #f5f1e8");
   });
 
+  it("stores matched rule patterns on the badge element", () => {
+    document.body.innerHTML = `
+      <shreddit-post>
+        <div slot="credit-bar">
+          <div slot="author-metadata"><span>u/example</span></div>
+        </div>
+        <a slot="title">This changes everything for solo founders</a>
+      </shreddit-post>
+    `;
+
+    scanRedditDocument(document, createSettings(), "www.reddit.com", "/r/test/");
+
+    const badge = document.querySelector<HTMLElement>(BADGE_SELECTOR);
+    const stored = JSON.parse(badge?.dataset.matchedRules ?? "[]");
+    expect(stored).toContain("changes everything");
+  });
+
   it("appends badge to first child of credit-bar when author-metadata has not yet rendered", () => {
     document.body.innerHTML = `
       <shreddit-post>

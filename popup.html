@@ -42,11 +42,22 @@
             </div>
           </div>
         </div>
+        <h3 class="textarea-label">Phrases</h3>
         <textarea
-          id="rules-textarea"
-          rows="8"
+          id="phrases-textarea"
+          class="rules-textarea"
+          rows="6"
           wrap="off"
-          placeholder="Enter one rule per line&#10;Regex auto-detected (e.g. \bword\b)"
+          placeholder="Enter one phrase per line"
+        ></textarea>
+
+        <h3 class="textarea-label">Regex</h3>
+        <textarea
+          id="regex-textarea"
+          class="rules-textarea"
+          rows="4"
+          wrap="off"
+          placeholder="Enter one regex per line, e.g. (w|W)hy"
         ></textarea>
       </section>
     </main>

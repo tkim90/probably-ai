@@ -5,6 +5,7 @@ import {
   THREAD_FILTER_SELECTOR,
   THREAD_FILTER_TOGGLE_SELECTOR,
   TOGGLE_SELECTOR,
+  TOOLTIP_SELECTOR,
   clearInjectedUi,
   scanRedditDocument,
 } from "./detector";
@@ -139,9 +140,11 @@ function isInternalElement(element: Element | null): boolean {
     element.matches(TOGGLE_SELECTOR) ||
     element.matches(THREAD_FILTER_SELECTOR) ||
     element.matches(THREAD_FILTER_TOGGLE_SELECTOR) ||
+    element.matches(TOOLTIP_SELECTOR) ||
     element.closest(BADGE_SELECTOR) !== null ||
     element.closest(COLLAPSE_SELECTOR) !== null ||
-    element.closest(THREAD_FILTER_SELECTOR) !== null
+    element.closest(THREAD_FILTER_SELECTOR) !== null ||
+    element.closest(TOOLTIP_SELECTOR) !== null
   );
 }
 

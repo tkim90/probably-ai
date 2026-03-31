@@ -1,5 +1,5 @@
-import { compileRules, matchesAnyRule, normalizeText } from "../shared/rules";
-import type { ExtensionSettings } from "../shared/types";
+import { compileRules, findMatchingRules, normalizeText } from "../shared/rules";
+import type { CompiledRule, ExtensionSettings } from "../shared/types";
 import { isExtensionContextInvalidated } from "../shared/utils";
 
 const STYLE_ELEMENT_ID = "probably-ai-extension-style";
@@ -14,6 +14,7 @@ const ORIGINAL_DISPLAY_ATTRIBUTE = "data-probably-ai-original-display";
 const DIMMED_ATTRIBUTE = "data-probably-ai-dimmed";
 const ORIGINAL_OPACITY_ATTRIBUTE = "data-probably-ai-original-opacity";
 const THREAD_FILTER_ATTRIBUTE = "data-probably-ai-thread-filter";
+const TOOLTIP_ATTRIBUTE = "data-probably-ai-tooltip";
 const THREAD_FILTER_TOGGLE_ATTRIBUTE = "data-probably-ai-thread-filter-toggle";
 const THREAD_FILTER_ICON_ATTRIBUTE = "data-probably-ai-thread-filter-icon";
 const THREAD_FILTER_LABEL_ATTRIBUTE = "data-probably-ai-thread-filter-label";
@@ -51,6 +52,7 @@ interface ScanCandidate {
 interface CandidateState {
   candidate: ScanCandidate;
   matched: boolean;
+  matchedRules: CompiledRule[];
 }
 
 interface ThreadGroup {
@@ -94,10 +96,13 @@ export const COLLAPSE_SELECTOR = `[${COLLAPSE_ATTRIBUTE}="true"]`;
 export const TOGGLE_SELECTOR = `[${TOGGLE_ATTRIBUTE}="true"]`;
 export const THREAD_FILTER_SELECTOR = `[${THREAD_FILTER_ATTRIBUTE}="true"]`;
 export const THREAD_FILTER_TOGGLE_SELECTOR = `[${THREAD_FILTER_TOGGLE_ATTRIBUTE}="true"]`;
+export const TOOLTIP_SELECTOR = `[${TOOLTIP_ATTRIBUTE}="true"]`;
 export const PROCESSED_SELECTOR = `[${PROCESSED_ATTRIBUTE}="true"]`;
 export const INTERNAL_STYLE_ID = STYLE_ELEMENT_ID;
 
 export function clearInjectedUi(root: ParentNode = document): void {
+  removeTooltip();
+  root.querySelectorAll<HTMLElement>(TOOLTIP_SELECTOR).forEach((el) => el.remove());
   root.querySelectorAll<HTMLElement>(BADGE_SELECTOR).forEach((badge) => badge.remove());
   root.querySelectorAll<HTMLElement>(COLLAPSE_SELECTOR).forEach((control) => control.remove());
   root.querySelectorAll<HTMLElement>(THREAD_FILTER_SELECTOR).forEach((control) => control.remove());
@@ -121,15 +126,20 @@ export function scanRedditDocument(
   }
 
   ensureInjectedStyles(documentRef);
+  ensureTooltipListeners(documentRef);
   const compiledRules = compileRules(settings.rules);
   const candidates = collectCandidates(root, hostname, pathname);
-  const candidateStates = candidates.map((candidate) => ({
-    candidate,
-    matched:
-      settings.enabled &&
-      candidate.text.length > 0 &&
-      matchesAnyRule(candidate.text, compiledRules),
-  }));
+  const candidateStates = candidates.map((candidate) => {
+    const matchedRules =
+      settings.enabled && candidate.text.length > 0
+        ? findMatchingRules(candidate.text, compiledRules)
+        : [];
+    return {
+      candidate,
+      matched: matchedRules.length > 0,
+      matchedRules,
+    };
+  });
   const nextActiveCandidates = new Map<string, ScanCandidate>();
   const nextThreadGroups = new Map<string, ThreadGroup>();
   const threadAnchors = new Map<string, HTMLElement>();
@@ -150,7 +160,7 @@ export function scanRedditDocument(
     }
 
     if (threadManaged && candidate.platform === "current") {
-      syncBadge(candidate, matched);
+      syncBadge(candidate, matched, state.matchedRules);
       syncCollapse(candidate, false, false);
 
       if (!matched) {
@@ -163,7 +173,7 @@ export function scanRedditDocument(
       continue;
     }
 
-    syncBadge(candidate, matched);
+    syncBadge(candidate, matched, state.matchedRules);
     syncCollapse(candidate, matched, shouldIndividuallyHide(candidate, settings.autoHideDetected));
 
     if (matched && candidate.kind === "post" && !candidate.isMainSubmission && settings.autoHideDetected) {
@@ -298,6 +308,49 @@ function ensureInjectedStyles(documentRef: Document): void {
 
     [${META_ROW_ATTRIBUTE}="true"] .probably-ai-badge {
       margin: 0 0 0 0.45rem;
+    }
+
+    .probably-ai-tooltip {
+      position: absolute;
+      z-index: 2147483647;
+      max-width: 360px;
+      min-width: 180px;
+      padding: 0.6rem 0.75rem;
+      border-radius: 8px;
+      background: #2a2a2a;
+      color: #f5f1e8;
+      font-size: 0.78rem;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.4;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+      pointer-events: none;
+    }
+
+    .probably-ai-tooltip-header {
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+      color: #D4A017;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .probably-ai-tooltip-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .probably-ai-tooltip-item {
+      padding: 0.18rem 0;
+      word-break: break-word;
+      color: #f5f1e8;
+    }
+
+    .probably-ai-tooltip-item::before {
+      content: "\\2022";
+      margin-right: 0.4rem;
+      color: #D4A017;
     }
 
     .probably-ai-post-collapse {
@@ -487,14 +540,17 @@ function shouldIndividuallyHide(
   return autoHideDetected && candidate.kind === "comment" && candidate.platform === "current";
 }
 
-function syncBadge(candidate: ScanCandidate, matched: boolean): void {
+function syncBadge(candidate: ScanCandidate, matched: boolean, matchedRules: CompiledRule[]): void {
   const existingBadge = candidate.container.querySelector<HTMLElement>(BADGE_SELECTOR);
   if (!matched) {
     existingBadge?.remove();
     return;
   }
 
+  const rulePatterns = JSON.stringify(matchedRules.map((r) => r.pattern));
+
   if (existingBadge) {
+    existingBadge.dataset.matchedRules = rulePatterns;
     if (existingBadge.parentElement !== candidate.badgeTarget) {
       moveIndicator(existingBadge, candidate.badgeTarget, candidate.placement);
     }
@@ -506,6 +562,7 @@ function syncBadge(candidate: ScanCandidate, matched: boolean): void {
   const badge = doc.createElement("span");
   badge.className = "probably-ai-badge";
   badge.setAttribute(BADGE_ATTRIBUTE, "true");
+  badge.dataset.matchedRules = rulePatterns;
 
   const iconWrapper = doc.createElement("span");
   iconWrapper.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" fill="#D4A017"><path d="M1 21h22L12 2zm12-3h-2v-2h2zm0-4h-2v-4h2z"/></svg>';
@@ -514,6 +571,109 @@ function syncBadge(candidate: ScanCandidate, matched: boolean): void {
   badge.appendChild(doc.createTextNode("Probably AI"));
 
   moveIndicator(badge, candidate.badgeTarget, candidate.placement);
+}
+
+let activeTooltip: HTMLElement | null = null;
+let tooltipListenersAttached = false;
+
+function ensureTooltipListeners(documentRef: Document): void {
+  if (tooltipListenersAttached) {
+    return;
+  }
+  tooltipListenersAttached = true;
+
+  documentRef.body.addEventListener("mouseover", (event) => {
+    const badge = (event.target as HTMLElement).closest?.<HTMLElement>(BADGE_SELECTOR);
+    if (badge) {
+      showTooltip(badge);
+    }
+  });
+
+  documentRef.body.addEventListener("mouseout", (event) => {
+    const badge = (event.target as HTMLElement).closest?.<HTMLElement>(BADGE_SELECTOR);
+    if (badge) {
+      removeTooltip();
+    }
+  });
+}
+
+function showTooltip(badge: HTMLElement): void {
+  removeTooltip();
+
+  const raw = badge.dataset.matchedRules;
+  if (!raw) {
+    return;
+  }
+
+  let patterns: string[];
+  try {
+    patterns = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (patterns.length === 0) {
+    return;
+  }
+
+  const doc = badge.ownerDocument;
+  const tooltip = doc.createElement("div");
+  tooltip.className = "probably-ai-tooltip";
+  tooltip.setAttribute(TOOLTIP_ATTRIBUTE, "true");
+
+  const header = doc.createElement("div");
+  header.className = "probably-ai-tooltip-header";
+  header.textContent = "Matched rules";
+  tooltip.appendChild(header);
+
+  const list = doc.createElement("ul");
+  list.className = "probably-ai-tooltip-list";
+  for (const pattern of patterns) {
+    const item = doc.createElement("li");
+    item.className = "probably-ai-tooltip-item";
+    item.textContent = pattern;
+    list.appendChild(item);
+  }
+  tooltip.appendChild(list);
+
+  doc.body.appendChild(tooltip);
+  positionTooltip(tooltip, badge);
+  activeTooltip = tooltip;
+}
+
+function removeTooltip(): void {
+  activeTooltip?.remove();
+  activeTooltip = null;
+}
+
+function positionTooltip(tooltip: HTMLElement, anchor: HTMLElement): void {
+  const rect = anchor.getBoundingClientRect();
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
+
+  tooltip.style.visibility = "hidden";
+  tooltip.style.position = "absolute";
+  tooltip.style.top = "0";
+  tooltip.style.left = "0";
+
+  const tooltipRect = tooltip.getBoundingClientRect();
+
+  let top = rect.bottom + scrollY + 6;
+  let left = rect.left + scrollX;
+
+  if (left + tooltipRect.width > scrollX + window.innerWidth - 8) {
+    left = scrollX + window.innerWidth - tooltipRect.width - 8;
+  }
+  if (left < scrollX + 8) {
+    left = scrollX + 8;
+  }
+
+  if (rect.bottom + tooltipRect.height + 6 > window.innerHeight) {
+    top = rect.top + scrollY - tooltipRect.height - 6;
+  }
+
+  tooltip.style.top = `${top}px`;
+  tooltip.style.left = `${left}px`;
+  tooltip.style.visibility = "visible";
 }
 
 function syncCollapse(
