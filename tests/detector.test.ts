@@ -685,4 +685,76 @@ describe("scanRedditDocument", () => {
     expect(document.querySelectorAll(COLLAPSE_SELECTOR)).toHaveLength(0);
     expect(document.querySelectorAll(THREAD_FILTER_SELECTOR)).toHaveLength(0);
   });
+
+  it("does not tag a current Reddit child comment when only the parent matches", () => {
+    document.body.innerHTML = `
+      <div data-testid="comment-thread">
+        <shreddit-comment>
+          <div slot="commentMeta"><span>u/parent</span></div>
+          <div slot="comment"><p>Either way — bookmarked and seriously impressed.</p></div>
+          <shreddit-comment>
+            <div slot="commentMeta"><span>u/child</span></div>
+            <div slot="comment"><p>Thank you so much and I'm stoked you like it!</p></div>
+          </shreddit-comment>
+        </shreddit-comment>
+      </div>
+    `;
+
+    const matches = scanRedditDocument(
+      document,
+      createSettings(),
+      "www.reddit.com",
+      "/r/test/comments/abc123/post-title/",
+    );
+
+    const parentMeta = document.querySelectorAll<HTMLElement>("[slot='commentMeta']")[0];
+    const childMeta = document.querySelectorAll<HTMLElement>("[slot='commentMeta']")[1];
+
+    expect(matches).toBe(1);
+    expect(parentMeta?.querySelector(BADGE_SELECTOR)).not.toBeNull();
+    expect(childMeta?.querySelector(BADGE_SELECTOR)).toBeNull();
+  });
+
+  it("does not tag an old Reddit child comment when only the parent matches", () => {
+    document.body.innerHTML = `
+      <div class="commentarea">
+        <div class="sitetable">
+          <div class="thing comment">
+            <div class="entry">
+              <p class="tagline">posted by u/parent</p>
+              <div class="usertext-body">
+                <div class="md"><p>Either way — bookmarked and seriously impressed.</p></div>
+              </div>
+            </div>
+            <div class="child">
+              <div class="sitetable">
+                <div class="thing comment">
+                  <div class="entry">
+                    <p class="tagline">posted by u/child</p>
+                    <div class="usertext-body">
+                      <div class="md"><p>Thank you so much and I'm stoked you like it!</p></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const matches = scanRedditDocument(
+      document,
+      createSettings(),
+      "old.reddit.com",
+      "/r/test/comments/abc123/post-title/",
+    );
+
+    const parentTagline = document.querySelectorAll<HTMLElement>(".thing.comment .tagline")[0];
+    const childTagline = document.querySelectorAll<HTMLElement>(".thing.comment .tagline")[1];
+
+    expect(matches).toBe(1);
+    expect(parentTagline?.querySelector(BADGE_SELECTOR)).not.toBeNull();
+    expect(childTagline?.querySelector(BADGE_SELECTOR)).toBeNull();
+  });
 });

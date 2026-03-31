@@ -962,6 +962,7 @@ function collectCurrentRedditComments(root: Document | Element): ScanCandidate[]
     "article[data-testid='comment']",
     "div[data-testid='comment']",
   ]);
+  const nestedSelectors = "shreddit-comment, article[data-testid='comment'], div[data-testid='comment']";
 
   return containers
     .map((container) => {
@@ -982,7 +983,7 @@ function collectCurrentRedditComments(root: Document | Element): ScanCandidate[]
         "[slot='comment']",
         "[data-testid='comment']",
         "p",
-      ]);
+      ], nestedSelectors);
 
       return buildCandidate({
         kind: "comment",
@@ -1043,7 +1044,7 @@ function collectOldRedditComments(root: Document | Element): ScanCandidate[] {
       const metadataTarget = findMetadataTarget(container, [".entry .tagline"]);
       const indicatorTarget = metadataTarget ?? (selectFirst(container, [".entry"]) ?? container);
       const contentTargets = collectUniqueElements(container, [".entry .usertext-body", ".entry .md"]);
-      const text = collectText(container, [".entry .usertext-body .md", ".entry .md"]);
+      const text = collectText(container, [".entry .usertext-body .md", ".entry .md"], ".thing.comment");
       const threadHost = findOldThreadGroupHost(container);
 
       return buildCandidate({
@@ -1318,9 +1319,23 @@ function pickCurrentContainers(
   );
 }
 
-function collectText(container: HTMLElement, selectors: string[]): string {
-  const collected = selectors
-    .flatMap((selector) => Array.from(container.querySelectorAll<HTMLElement>(selector)))
+function collectText(
+  container: HTMLElement,
+  selectors: string[],
+  nestedSelectors?: string,
+): string {
+  let elements = selectors.flatMap((selector) =>
+    Array.from(container.querySelectorAll<HTMLElement>(selector)),
+  );
+
+  if (nestedSelectors) {
+    elements = elements.filter((element) => {
+      const owner = element.closest<HTMLElement>(nestedSelectors);
+      return owner === null || owner === container;
+    });
+  }
+
+  const collected = elements
     .map((element) => normalizeText(element.textContent ?? ""))
     .filter(Boolean);
 
