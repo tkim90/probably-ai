@@ -135,5 +135,23 @@ function escapeRegex(value: string): string {
 }
 
 function normalizeForMatching(value: string): string {
-  return value.replace(/[’‘]/g, "'");
+  return value.replace(/[‘’]/g, "’");
+}
+
+const REGEX_INDICATOR = /\\[a-zA-Z]|\(\?/;
+
+export function isRegexPattern(pattern: string): boolean {
+  return REGEX_INDICATOR.test(pattern);
+}
+
+export function parseRulesText(text: string): StoredRule[] {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => createUserRule(line, isRegexPattern(line) ? "regex" : "literal"));
+}
+
+export function rulesToText(rules: StoredRule[]): string {
+  return rules.map((rule) => rule.pattern).join("\n");
 }

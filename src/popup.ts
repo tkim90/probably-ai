@@ -1,23 +1,16 @@
 import "./popup.css";
 
 import { buildResetSettings, getSettings, saveSettings } from "./shared/storage";
-import { createUserRule, validateRulePattern } from "./shared/rules";
-import type { ExtensionSettings, MatchType } from "./shared/types";
+import { parseRulesText, rulesToText } from "./shared/rules";
+import type { ExtensionSettings } from "./shared/types";
 
 const enabledToggle = document.querySelector<HTMLInputElement>("#enabled-toggle");
 const autohideToggle = document.querySelector<HTMLInputElement>("#autohide-toggle");
-const addRuleForm = document.querySelector<HTMLFormElement>("#add-rule-form");
-const patternInput = document.querySelector<HTMLTextAreaElement>("#pattern-input");
-const matchTypeInputs = Array.from(
-  document.querySelectorAll<HTMLInputElement>("input[name='match-type']"),
-);
-const formError = document.querySelector<HTMLParagraphElement>("#form-error");
-const ruleList = document.querySelector<HTMLUListElement>("#rule-list");
+const rulesTextarea = document.querySelector<HTMLTextAreaElement>("#rules-textarea");
 const resetDefaultsButton = document.querySelector<HTMLButtonElement>("#reset-defaults");
 const resetConfirmation = document.querySelector<HTMLDivElement>("#reset-confirmation");
 const resetConfirmYesButton = document.querySelector<HTMLButtonElement>("#reset-confirm-yes");
 const resetConfirmNoButton = document.querySelector<HTMLButtonElement>("#reset-confirm-no");
-const popupRoot = document.querySelector<HTMLElement>(".popup");
 
 let settings: ExtensionSettings;
 let isResetConfirmationVisible = false;
@@ -26,11 +19,7 @@ async function init(): Promise<void> {
   if (
     !enabledToggle ||
     !autohideToggle ||
-    !addRuleForm ||
-    !patternInput ||
-    matchTypeInputs.length === 0 ||
-    !formError ||
-    !ruleList ||
+    !rulesTextarea ||
     !resetDefaultsButton ||
     !resetConfirmation ||
     !resetConfirmYesButton ||
@@ -60,86 +49,16 @@ async function init(): Promise<void> {
     await saveSettings(settings);
   });
 
-  addRuleForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    clearError();
-
-    const pattern = patternInput.value.trim();
-    const matchType = getSelectedMatchType();
-    if (!pattern) {
-      setError(matchType === "literal" ? "Enter a phrase before saving." : "Enter a regex before saving.");
-      return;
-    }
-
-    const duplicate = settings.rules.some(
-      (rule) => rule.pattern === pattern && rule.matchType === matchType,
-    );
-    if (duplicate) {
-      setError("That rule already exists.");
-      return;
-    }
-
-    const validationError = validateRulePattern(pattern, matchType);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-
+  rulesTextarea.addEventListener("input", async () => {
     settings = {
       ...settings,
-      rules: [...settings.rules, createUserRule(pattern, matchType)],
-    };
-
-    await saveSettings(settings);
-    patternInput.value = "";
-    setSelectedMatchType("literal");
-    hideResetConfirmation();
-    renderRuleList(settings, true);
-  });
-
-  ruleList.addEventListener("change", async (event) => {
-    const input = event.target;
-    if (!(input instanceof HTMLInputElement) || input.dataset.action !== "toggle-rule") {
-      return;
-    }
-
-    const ruleId = input.dataset.ruleId;
-    if (!ruleId) {
-      return;
-    }
-
-    settings = {
-      ...settings,
-      rules: settings.rules.map((rule) =>
-        rule.id === ruleId ? { ...rule, enabled: input.checked } : rule,
-      ),
+      rules: parseRulesText(rulesTextarea.value),
     };
 
     await saveSettings(settings);
   });
 
-  ruleList.addEventListener("click", async (event) => {
-    const button = event.target;
-    if (!(button instanceof HTMLButtonElement) || button.dataset.action !== "delete-rule") {
-      return;
-    }
-
-    const ruleId = button.dataset.ruleId;
-    if (!ruleId) {
-      return;
-    }
-
-    settings = {
-      ...settings,
-      rules: settings.rules.filter((rule) => rule.id !== ruleId),
-    };
-
-    await saveSettings(settings);
-    hideResetConfirmation();
-    renderRuleList(settings, true);
-  });
-
-  resetDefaultsButton.addEventListener("click", async () => {
+  resetDefaultsButton.addEventListener("click", () => {
     showResetConfirmation();
   });
 
@@ -147,7 +66,10 @@ async function init(): Promise<void> {
     settings = buildResetSettings(settings);
     await saveSettings(settings);
     hideResetConfirmation();
-    renderRuleList(settings, true);
+
+    if (rulesTextarea) {
+      rulesTextarea.value = rulesToText(settings.rules);
+    }
   });
 
   resetConfirmNoButton.addEventListener("click", () => {
@@ -156,93 +78,14 @@ async function init(): Promise<void> {
 }
 
 function render(nextSettings: ExtensionSettings): void {
-  if (!enabledToggle || !autohideToggle) {
+  if (!enabledToggle || !autohideToggle || !rulesTextarea) {
     return;
   }
 
   enabledToggle.checked = nextSettings.enabled;
   autohideToggle.checked = nextSettings.autoHideDetected;
+  rulesTextarea.value = rulesToText(nextSettings.rules);
   renderResetConfirmation();
-  renderRuleList(nextSettings);
-}
-
-function renderRuleList(nextSettings: ExtensionSettings, preserveScroll = false): void {
-  if (!ruleList) {
-    return;
-  }
-
-  const renderCards = () => {
-    ruleList.replaceChildren(
-      ...nextSettings.rules.map((rule) => {
-        const item = document.createElement("li");
-        item.className = "rule-card";
-
-        const pattern = document.createElement("p");
-        pattern.className = "rule-card__pattern";
-        pattern.textContent = rule.pattern;
-
-        const controls = document.createElement("div");
-        controls.className = "rule-card__controls";
-
-        const toggleLabel = document.createElement("label");
-        toggleLabel.className = "rule-card__toggle";
-
-        const toggle = document.createElement("input");
-        toggle.type = "checkbox";
-        toggle.checked = rule.enabled;
-        toggle.dataset.action = "toggle-rule";
-        toggle.dataset.ruleId = rule.id;
-        toggle.setAttribute("aria-label", `Toggle rule ${rule.pattern}`);
-
-        const deleteButton = document.createElement("button");
-        deleteButton.type = "button";
-        deleteButton.className = "rule-card__delete";
-        deleteButton.dataset.action = "delete-rule";
-        deleteButton.dataset.ruleId = rule.id;
-        deleteButton.textContent = "Delete";
-
-        toggleLabel.append(toggle);
-        controls.append(toggleLabel, deleteButton);
-        item.append(pattern, controls);
-        return item;
-      }),
-    );
-  };
-
-  if (!preserveScroll) {
-    renderCards();
-    return;
-  }
-
-  const scrollTargets = collectScrollTargets();
-  const scrollPositions = scrollTargets.map((target) => [target, target.scrollTop] as const);
-  renderCards();
-
-  for (const [target, scrollTop] of scrollPositions) {
-    target.scrollTop = scrollTop;
-  }
-}
-
-function collectScrollTargets(): HTMLElement[] {
-  const candidates = [
-    document.scrollingElement,
-    document.documentElement,
-    document.body,
-    popupRoot,
-  ].filter((element): element is HTMLElement => element instanceof HTMLElement);
-
-  return Array.from(new Set(candidates));
-}
-
-function getSelectedMatchType(): MatchType {
-  const selected = matchTypeInputs.find((input) => input.checked);
-  return selected?.value === "regex" ? "regex" : "literal";
-}
-
-function setSelectedMatchType(matchType: MatchType): void {
-  for (const input of matchTypeInputs) {
-    input.checked = input.value === matchType;
-  }
 }
 
 function showResetConfirmation(): void {
@@ -262,24 +105,6 @@ function renderResetConfirmation(): void {
 
   resetDefaultsButton.hidden = isResetConfirmationVisible;
   resetConfirmation.hidden = !isResetConfirmationVisible;
-}
-
-function setError(message: string): void {
-  if (!formError) {
-    return;
-  }
-
-  formError.hidden = false;
-  formError.textContent = message;
-}
-
-function clearError(): void {
-  if (!formError) {
-    return;
-  }
-
-  formError.hidden = true;
-  formError.textContent = "";
 }
 
 void init();

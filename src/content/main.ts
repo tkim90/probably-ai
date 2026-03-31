@@ -10,6 +10,7 @@ import {
 } from "./detector";
 import { STORAGE_KEY, getSettings } from "../shared/storage";
 import type { ExtensionSettings } from "../shared/types";
+import { isExtensionContextInvalidated } from "../shared/utils";
 
 const OBSERVER_OPTIONS: MutationObserverInit = {
   childList: true,
@@ -20,10 +21,6 @@ const OBSERVER_OPTIONS: MutationObserverInit = {
 let observer: MutationObserver | null = null;
 let scheduledScanId: number | null = null;
 let currentSettings: ExtensionSettings | null = null;
-
-function isExtensionContextInvalidated(error: unknown): boolean {
-  return error instanceof Error && error.message.includes("Extension context invalidated");
-}
 
 function handleContentRuntimeError(error: unknown): void {
   if (isExtensionContextInvalidated(error)) {

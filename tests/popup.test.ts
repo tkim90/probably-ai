@@ -21,25 +21,6 @@ const popupMarkup = `
     </section>
 
     <section class="panel">
-      <form id="add-rule-form" class="rule-form">
-        <fieldset class="match-type-group">
-          <legend class="sr-only">Rule type</legend>
-          <label class="match-type-option" for="match-type-literal">
-            <input id="match-type-literal" name="match-type" type="radio" value="literal" checked />
-            <span>Literal phrase</span>
-          </label>
-          <label class="match-type-option" for="match-type-regex">
-            <input id="match-type-regex" name="match-type" type="radio" value="regex" />
-            <span>Regex</span>
-          </label>
-        </fieldset>
-        <textarea id="pattern-input" rows="3"></textarea>
-        <p id="form-error" class="error" hidden></p>
-        <button id="add-rule-button" type="submit">Add rule</button>
-      </form>
-    </section>
-
-    <section class="panel">
       <div class="panel__header">
         <h2>Rules</h2>
         <div class="panel__actions">
@@ -51,7 +32,7 @@ const popupMarkup = `
           </div>
         </div>
       </div>
-      <ul id="rule-list" class="rule-list"></ul>
+      <textarea id="rules-textarea" rows="8"></textarea>
     </section>
   </main>
 `;
@@ -104,19 +85,6 @@ async function flushUi(): Promise<void> {
   await Promise.resolve();
 }
 
-function findRuleCard(pattern: string): HTMLElement {
-  const cards = Array.from(document.querySelectorAll<HTMLElement>(".rule-card"));
-  const card = cards.find((candidate) =>
-    candidate.querySelector<HTMLElement>(".rule-card__pattern")?.textContent === pattern,
-  );
-
-  if (!card) {
-    throw new Error(`Could not find rule card for pattern: ${pattern}`);
-  }
-
-  return card;
-}
-
 describe("popup UI", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -128,56 +96,67 @@ describe("popup UI", () => {
         createUserRule("user-regex-rule", "hello\\d+", "regex"),
       ],
     };
-    document.documentElement.scrollTop = 0;
-    document.body.scrollTop = 0;
   });
 
   afterEach(() => {
     document.body.innerHTML = "";
   });
 
-  it("renders simplified rule cards and shows delete for default and user rules", async () => {
+  it("populates textarea with stored rules on load", async () => {
     await mountPopup();
 
-    const ruleList = document.querySelector<HTMLElement>("#rule-list");
-    expect(ruleList?.querySelectorAll(".rule-card")).toHaveLength(2);
-    expect(ruleList?.querySelectorAll(".rule-card__delete")).toHaveLength(2);
-    expect(ruleList?.querySelectorAll(".pill")).toHaveLength(0);
-    expect(ruleList?.textContent).not.toContain("Enabled");
-    expect(ruleList?.textContent).not.toContain("Disabled");
+    const textarea = document.querySelector<HTMLTextAreaElement>("#rules-textarea");
+    expect(textarea?.value).toBe("changes everything\nhello\\d+");
   });
 
-  it("adds rules using the inline radio group for regex and literal modes", async () => {
+  it("saves rules when textarea content changes", async () => {
     await mountPopup();
 
-    const regexRadio = document.querySelector<HTMLInputElement>("#match-type-regex");
-    const literalRadio = document.querySelector<HTMLInputElement>("#match-type-literal");
-    const patternInput = document.querySelector<HTMLTextAreaElement>("#pattern-input");
-    const form = document.querySelector<HTMLFormElement>("#add-rule-form");
+    const textarea = document.querySelector<HTMLTextAreaElement>("#rules-textarea");
+    if (!textarea) throw new Error("Textarea not found.");
 
-    if (!regexRadio || !literalRadio || !patternInput || !form) {
-      throw new Error("Popup form failed to mount.");
-    }
-
-    regexRadio.checked = true;
-    patternInput.value = "founder\\s+mode";
-    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    textarea.value = "game changer\n\\btest\\b";
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
     await flushUi();
 
-    expect(currentSettings.rules.at(-1)).toMatchObject({
-      pattern: "founder\\s+mode",
-      matchType: "regex",
-    });
-
-    literalRadio.checked = true;
-    patternInput.value = "ship fast";
-    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-    await flushUi();
-
-    expect(currentSettings.rules.at(-1)).toMatchObject({
-      pattern: "ship fast",
+    expect(currentSettings.rules).toHaveLength(2);
+    expect(currentSettings.rules[0]).toMatchObject({
+      pattern: "game changer",
       matchType: "literal",
     });
+    expect(currentSettings.rules[1]).toMatchObject({
+      pattern: "\\btest\\b",
+      matchType: "regex",
+    });
+  });
+
+  it("auto-detects regex patterns with group constructs", async () => {
+    await mountPopup();
+
+    const textarea = document.querySelector<HTMLTextAreaElement>("#rules-textarea");
+    if (!textarea) throw new Error("Textarea not found.");
+
+    textarea.value = "(?i)hello world";
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    await flushUi();
+
+    expect(currentSettings.rules[0]).toMatchObject({
+      pattern: "(?i)hello world",
+      matchType: "regex",
+    });
+  });
+
+  it("filters blank lines", async () => {
+    await mountPopup();
+
+    const textarea = document.querySelector<HTMLTextAreaElement>("#rules-textarea");
+    if (!textarea) throw new Error("Textarea not found.");
+
+    textarea.value = "hello\n\n\nworld\n";
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    await flushUi();
+
+    expect(currentSettings.rules).toHaveLength(2);
   });
 
   it("shows inline reset confirmation and cancels cleanly on no", async () => {
@@ -202,11 +181,10 @@ describe("popup UI", () => {
 
     expect(document.querySelector<HTMLElement>("#reset-confirmation")?.hidden).toBe(true);
     expect(document.querySelector<HTMLButtonElement>("#reset-defaults")?.hidden).toBe(false);
-    expect(currentSettings.rules.some((rule) => rule.id === "user-literal-rule")).toBe(true);
     expect(buildResetSettingsMock).not.toHaveBeenCalled();
   });
 
-  it("deletes default rules and confirmed reset replaces the list with shipped defaults only", async () => {
+  it("confirmed reset replaces textarea with shipped defaults only", async () => {
     currentSettings = {
       enabled: false,
       autoHideDetected: true,
@@ -215,12 +193,10 @@ describe("popup UI", () => {
 
     await mountPopup();
 
-    findRuleCard("changes everything")
-      .querySelector<HTMLButtonElement>(".rule-card__delete")
-      ?.click();
-    await flushUi();
+    const textarea = document.querySelector<HTMLTextAreaElement>("#rules-textarea");
+    if (!textarea) throw new Error("Textarea not found.");
 
-    expect(currentSettings.rules.some((rule) => rule.id === "default-changes-everything")).toBe(false);
+    expect(textarea.value).toContain("ship fast");
 
     document.querySelector<HTMLButtonElement>("#reset-defaults")?.click();
     await flushUi();
@@ -229,73 +205,10 @@ describe("popup UI", () => {
 
     expect(currentSettings.enabled).toBe(false);
     expect(currentSettings.autoHideDetected).toBe(true);
-    expect(currentSettings.rules.some((rule) => rule.id === "default-changes-everything")).toBe(true);
-    expect(currentSettings.rules.some((rule) => rule.id === "user-literal-rule")).toBe(false);
     expect(currentSettings.rules).toHaveLength(cloneDefaultRules().length);
     expect(currentSettings.rules.every((rule) => rule.source === "default")).toBe(true);
+    expect(textarea.value).not.toContain("ship fast");
+    expect(textarea.value).toContain("changes everything");
     expect(document.querySelector<HTMLElement>("#reset-confirmation")?.hidden).toBe(true);
-  });
-
-  it("does not rerender or reset scroll when a rule checkbox changes", async () => {
-    await mountPopup();
-
-    const ruleList = document.querySelector<HTMLUListElement>("#rule-list");
-    const checkbox = document.querySelector<HTMLInputElement>("[data-action='toggle-rule']");
-    if (!ruleList || !checkbox) {
-      throw new Error("Rule list failed to render.");
-    }
-
-    const originalReplaceChildren = ruleList.replaceChildren.bind(ruleList);
-    const replaceChildrenSpy = vi
-      .spyOn(ruleList, "replaceChildren")
-      .mockImplementation((...nodes: Array<Node | string>) => {
-        document.documentElement.scrollTop = 0;
-        originalReplaceChildren(...nodes);
-      });
-
-    document.documentElement.scrollTop = 180;
-    checkbox.checked = false;
-    checkbox.dispatchEvent(new Event("change", { bubbles: true }));
-    await flushUi();
-
-    expect(replaceChildrenSpy).not.toHaveBeenCalled();
-    expect(document.documentElement.scrollTop).toBe(180);
-    expect(currentSettings.rules[0]?.enabled).toBe(false);
-  });
-
-  it("preserves scroll position when rerendering after delete and confirmed reset", async () => {
-    await mountPopup();
-
-    const ruleList = document.querySelector<HTMLUListElement>("#rule-list");
-    if (!ruleList) {
-      throw new Error("Rule list failed to render.");
-    }
-
-    const originalReplaceChildren = ruleList.replaceChildren.bind(ruleList);
-    const replaceChildrenSpy = vi
-      .spyOn(ruleList, "replaceChildren")
-      .mockImplementation((...nodes: Array<Node | string>) => {
-        document.documentElement.scrollTop = 0;
-        originalReplaceChildren(...nodes);
-      });
-
-    document.documentElement.scrollTop = 160;
-    findRuleCard("changes everything")
-      .querySelector<HTMLButtonElement>(".rule-card__delete")
-      ?.click();
-    await flushUi();
-
-    expect(replaceChildrenSpy).toHaveBeenCalledTimes(1);
-    expect(document.documentElement.scrollTop).toBe(160);
-
-    document.documentElement.scrollTop = 140;
-    document.querySelector<HTMLButtonElement>("#reset-defaults")?.click();
-    await flushUi();
-    expect(replaceChildrenSpy).toHaveBeenCalledTimes(1);
-    document.querySelector<HTMLButtonElement>("#reset-confirm-yes")?.click();
-    await flushUi();
-
-    expect(replaceChildrenSpy).toHaveBeenCalledTimes(2);
-    expect(document.documentElement.scrollTop).toBe(140);
   });
 });

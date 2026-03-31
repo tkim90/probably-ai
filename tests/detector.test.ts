@@ -188,7 +188,7 @@ describe("scanRedditDocument", () => {
             <span>u/example</span>
             <span>1 day ago</span>
           </div>
-          <div slot="comment">It’s not search. It’s discovery.</div>
+          <div slot="comment">This changes everything for search and discovery.</div>
         </shreddit-comment>
         <shreddit-comment>
           <div slot="commentMeta">
@@ -241,7 +241,7 @@ describe("scanRedditDocument", () => {
             <div slot="commentMeta">
               <span>u/example</span>
             </div>
-            <div slot="comment">It’s not search. It’s discovery.</div>
+            <div slot="comment">This changes everything for search and discovery.</div>
           </shreddit-comment>
         </div>
       </main>
@@ -281,7 +281,7 @@ describe("scanRedditDocument", () => {
             <div slot="commentMeta">
               <span>u/example</span>
             </div>
-            <div slot="comment">It’s not search. It’s discovery.</div>
+            <div slot="comment">This changes everything for search and discovery.</div>
           </shreddit-comment>
         </div>
       `;
@@ -326,7 +326,7 @@ describe("scanRedditDocument", () => {
             <span>u/example</span>
             <span>1 day ago</span>
           </div>
-          <div slot="comment">It’s not search. It’s discovery.</div>
+          <div slot="comment">This changes everything for search and discovery.</div>
         </shreddit-comment>
       </div>
     `;
@@ -407,7 +407,7 @@ describe("scanRedditDocument", () => {
             <span>u/example</span>
             <span>1 day ago</span>
           </div>
-          <div slot="comment">It’s not search. It’s discovery.</div>
+          <div slot="comment">This changes everything for search and discovery.</div>
         </shreddit-comment>
       </div>
     `;
@@ -567,7 +567,7 @@ describe("scanRedditDocument", () => {
             <div slot="commentMeta">
               <span>u/example</span>
             </div>
-            <div slot="comment">It’s not search. It’s discovery.</div>
+            <div slot="comment">This changes everything for search and discovery.</div>
           </shreddit-comment>
         </div>
       `;
@@ -630,7 +630,7 @@ describe("scanRedditDocument", () => {
             <span>u/example</span>
             <span>1 day ago</span>
           </div>
-          <div slot="comment">It’s not search. It’s discovery.</div>
+          <div slot="comment">This changes everything for search and discovery.</div>
         </shreddit-comment>
       </div>
     `;

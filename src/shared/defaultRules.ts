@@ -9,13 +9,6 @@ export const DEFAULT_RULES: StoredRule[] = [
     matchType: "literal",
   },
   {
-    id: "default-its-not-its",
-    pattern: "it's not",
-    enabled: true,
-    source: "default",
-    matchType: "literal",
-  },
-  {
     id: "default-em-dash",
     pattern: "—",
     enabled: true,

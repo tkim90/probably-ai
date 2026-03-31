@@ -1,5 +1,6 @@
 import { compileRules, matchesAnyRule, normalizeText } from "../shared/rules";
 import type { ExtensionSettings } from "../shared/types";
+import { isExtensionContextInvalidated } from "../shared/utils";
 
 const STYLE_ELEMENT_ID = "probably-ai-extension-style";
 const BADGE_ATTRIBUTE = "data-probably-ai-badge";
@@ -60,10 +61,24 @@ interface ThreadGroup {
   comments: CandidateState[];
 }
 
-let nextCandidateId = 1;
-let nextThreadId = 1;
-const candidateKeys = new WeakMap<HTMLElement, string>();
-const threadKeys = new WeakMap<HTMLElement, string>();
+function makeKeyGenerator(prefix: string): (element: HTMLElement) => string {
+  let nextId = 1;
+  const keys = new WeakMap<HTMLElement, string>();
+
+  return (element: HTMLElement): string => {
+    const existing = keys.get(element);
+    if (existing) {
+      return existing;
+    }
+
+    const key = `${prefix}-${nextId++}`;
+    keys.set(element, key);
+    return key;
+  };
+}
+
+const getCandidateKey = makeKeyGenerator("candidate");
+const getThreadKey = makeKeyGenerator("thread");
 const expandedCandidateKeys = new Set<string>();
 const revealedThreadKeys = new Set<string>();
 let activeCandidates = new Map<string, ScanCandidate>();
@@ -140,20 +155,9 @@ export function scanRedditDocument(
 
       if (!matched) {
         revealElement(candidate.container);
-        undimCandidate(candidate);
-      } else if (candidate.threadKey && candidate.threadHost) {
-        const existingGroup = nextThreadGroups.get(candidate.threadKey);
-        if (existingGroup) {
-          existingGroup.comments.push(state);
-        } else {
-          nextThreadGroups.set(candidate.threadKey, {
-            key: candidate.threadKey,
-            platform: candidate.platform,
-            host: candidate.threadHost,
-            anchor: threadAnchors.get(candidate.threadKey) ?? candidate.container,
-            comments: [state],
-          });
-        }
+        applyCandidateDim(candidate, undimElement);
+      } else {
+        addToThreadGroup(nextThreadGroups, threadAnchors, candidate, state);
       }
 
       continue;
@@ -163,28 +167,17 @@ export function scanRedditDocument(
     syncCollapse(candidate, matched, shouldIndividuallyHide(candidate, settings.autoHideDetected));
 
     if (matched && candidate.kind === "post" && !candidate.isMainSubmission && settings.autoHideDetected) {
-      dimCandidate(candidate);
+      applyCandidateDim(candidate, dimElement);
     } else {
-      undimCandidate(candidate);
+      applyCandidateDim(candidate, undimElement);
     }
 
     if (threadManaged) {
       if (!matched) {
         revealElement(candidate.container);
-        undimCandidate(candidate);
-      } else if (candidate.threadKey && candidate.threadHost) {
-        const existingGroup = nextThreadGroups.get(candidate.threadKey);
-        if (existingGroup) {
-          existingGroup.comments.push(state);
-        } else {
-          nextThreadGroups.set(candidate.threadKey, {
-            key: candidate.threadKey,
-            platform: candidate.platform,
-            host: candidate.threadHost,
-            anchor: threadAnchors.get(candidate.threadKey) ?? candidate.container,
-            comments: [state],
-          });
-        }
+        applyCandidateDim(candidate, undimElement);
+      } else {
+        addToThreadGroup(nextThreadGroups, threadAnchors, candidate, state);
       }
     }
   }
@@ -237,7 +230,7 @@ function syncThreadGroups(
       group.host.querySelector<HTMLElement>(THREAD_FILTER_SELECTOR)?.remove();
       for (const state of group.comments) {
         revealElement(state.candidate.container);
-        undimCandidate(state.candidate);
+        applyCandidateDim(state.candidate, undimElement);
       }
     }
   }
@@ -457,6 +450,30 @@ function ensureInjectedStyles(documentRef: Document): void {
   `;
 
   documentRef.head?.append(style);
+}
+
+function addToThreadGroup(
+  nextThreadGroups: Map<string, ThreadGroup>,
+  threadAnchors: Map<string, HTMLElement>,
+  candidate: ScanCandidate,
+  state: CandidateState,
+): void {
+  if (!candidate.threadKey || !candidate.threadHost) {
+    return;
+  }
+
+  const existingGroup = nextThreadGroups.get(candidate.threadKey);
+  if (existingGroup) {
+    existingGroup.comments.push(state);
+  } else {
+    nextThreadGroups.set(candidate.threadKey, {
+      key: candidate.threadKey,
+      platform: candidate.platform,
+      host: candidate.threadHost,
+      anchor: threadAnchors.get(candidate.threadKey) ?? candidate.container,
+      comments: [state],
+    });
+  }
 }
 
 function isThreadManagedComment(candidate: ScanCandidate, autoHideDetected: boolean): boolean {
@@ -736,9 +753,9 @@ function applyThreadGroupState(group: ThreadGroup): void {
   for (const state of group.comments) {
     if (revealed) {
       revealElement(state.candidate.container);
-      dimCandidate(state.candidate);
+      applyCandidateDim(state.candidate, dimElement);
     } else {
-      undimCandidate(state.candidate);
+      applyCandidateDim(state.candidate, undimElement);
       hideElement(state.candidate.container);
     }
   }
@@ -762,56 +779,57 @@ function revealCandidate(candidate: ScanCandidate): void {
   }
 }
 
-function hideElement(element: HTMLElement): void {
-  if (element.getAttribute(HIDDEN_ATTRIBUTE) === "true") {
+function setElementStyle(
+  element: HTMLElement,
+  flagAttr: string,
+  originalAttr: string,
+  cssProp: string,
+  value: string,
+): void {
+  if (element.getAttribute(flagAttr) === "true") {
     return;
   }
 
-  element.setAttribute(HIDDEN_ATTRIBUTE, "true");
-  element.setAttribute(ORIGINAL_DISPLAY_ATTRIBUTE, element.style.display);
-  element.style.display = "none";
+  element.setAttribute(flagAttr, "true");
+  element.setAttribute(originalAttr, element.style.getPropertyValue(cssProp));
+  element.style.setProperty(cssProp, value);
+}
+
+function restoreElementStyle(
+  element: HTMLElement,
+  flagAttr: string,
+  originalAttr: string,
+  cssProp: string,
+): void {
+  if (element.getAttribute(flagAttr) !== "true") {
+    return;
+  }
+
+  const original = element.getAttribute(originalAttr) ?? "";
+  if (original) {
+    element.style.setProperty(cssProp, original);
+  } else {
+    element.style.removeProperty(cssProp);
+  }
+
+  element.removeAttribute(flagAttr);
+  element.removeAttribute(originalAttr);
+}
+
+function hideElement(element: HTMLElement): void {
+  setElementStyle(element, HIDDEN_ATTRIBUTE, ORIGINAL_DISPLAY_ATTRIBUTE, "display", "none");
 }
 
 function revealElement(element: HTMLElement): void {
-  if (element.getAttribute(HIDDEN_ATTRIBUTE) !== "true") {
-    return;
-  }
-
-  const originalDisplay = element.getAttribute(ORIGINAL_DISPLAY_ATTRIBUTE) ?? "";
-  if (originalDisplay) {
-    element.style.display = originalDisplay;
-  } else {
-    element.style.removeProperty("display");
-  }
-
-  element.removeAttribute(HIDDEN_ATTRIBUTE);
-  element.removeAttribute(ORIGINAL_DISPLAY_ATTRIBUTE);
+  restoreElementStyle(element, HIDDEN_ATTRIBUTE, ORIGINAL_DISPLAY_ATTRIBUTE, "display");
 }
 
 function dimElement(element: HTMLElement): void {
-  if (element.getAttribute(DIMMED_ATTRIBUTE) === "true") {
-    return;
-  }
-
-  element.setAttribute(DIMMED_ATTRIBUTE, "true");
-  element.setAttribute(ORIGINAL_OPACITY_ATTRIBUTE, element.style.opacity);
-  element.style.opacity = "0.56";
+  setElementStyle(element, DIMMED_ATTRIBUTE, ORIGINAL_OPACITY_ATTRIBUTE, "opacity", "0.56");
 }
 
 function undimElement(element: HTMLElement): void {
-  if (element.getAttribute(DIMMED_ATTRIBUTE) !== "true") {
-    return;
-  }
-
-  const originalOpacity = element.getAttribute(ORIGINAL_OPACITY_ATTRIBUTE) ?? "";
-  if (originalOpacity) {
-    element.style.opacity = originalOpacity;
-  } else {
-    element.style.removeProperty("opacity");
-  }
-
-  element.removeAttribute(DIMMED_ATTRIBUTE);
-  element.removeAttribute(ORIGINAL_OPACITY_ATTRIBUTE);
+  restoreElementStyle(element, DIMMED_ATTRIBUTE, ORIGINAL_OPACITY_ATTRIBUTE, "opacity");
 }
 
 function moveIndicator(element: HTMLElement, target: HTMLElement, placement: Placement): void {
@@ -830,10 +848,6 @@ function moveIndicator(element: HTMLElement, target: HTMLElement, placement: Pla
 
 function createSvgDataUrl(svg: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
-function isExtensionContextInvalidated(error: unknown): boolean {
-  return error instanceof Error && error.message.includes("Extension context invalidated");
 }
 
 function getExtensionAssetUrl(path: string): string {
@@ -869,17 +883,13 @@ function attachIsolatedButtonHandler(
   });
 }
 
-function dimCandidate(candidate: ScanCandidate): void {
+function applyCandidateDim(
+  candidate: ScanCandidate,
+  apply: (element: HTMLElement) => void,
+): void {
   const targets = candidate.dimTargets.length > 0 ? candidate.dimTargets : [candidate.container];
   for (const element of targets) {
-    dimElement(element);
-  }
-}
-
-function undimCandidate(candidate: ScanCandidate): void {
-  const targets = candidate.dimTargets.length > 0 ? candidate.dimTargets : [candidate.container];
-  for (const element of targets) {
-    undimElement(element);
+    apply(element);
   }
 }
 
@@ -1047,7 +1057,7 @@ function collectOldRedditPosts(
         badgeTarget: indicatorTarget,
         placement: "append",
         contentTargets,
-        dimTargets: collectOldPostDimTargets(container),
+        dimTargets: collectOldDimTargets(container),
         text,
         isMainSubmission: isDetailPage && index === 0,
       });
@@ -1072,7 +1082,7 @@ function collectOldRedditComments(root: Document | Element): ScanCandidate[] {
         badgeTarget: indicatorTarget,
         placement: "append",
         contentTargets,
-        dimTargets: collectOldCommentDimTargets(container),
+        dimTargets: collectOldDimTargets(container),
         text,
         threadHost,
         threadKey: getThreadKey(threadHost),
@@ -1131,28 +1141,6 @@ function buildCandidate({
     threadKey,
     threadHost,
   };
-}
-
-function getCandidateKey(container: HTMLElement): string {
-  const existing = candidateKeys.get(container);
-  if (existing) {
-    return existing;
-  }
-
-  const key = `candidate-${nextCandidateId++}`;
-  candidateKeys.set(container, key);
-  return key;
-}
-
-function getThreadKey(host: HTMLElement): string {
-  const existing = threadKeys.get(host);
-  if (existing) {
-    return existing;
-  }
-
-  const key = `thread-${nextThreadId++}`;
-  threadKeys.set(host, key);
-  return key;
 }
 
 function createPreviewText(text: string): string {
@@ -1226,23 +1214,7 @@ function collectCurrentPostDimTargets(container: HTMLElement): HTMLElement[] {
   return collectUniqueElements(container, selectors);
 }
 
-function collectOldPostDimTargets(container: HTMLElement): HTMLElement[] {
-  const directChildren = Array.from(container.children).filter(
-    (child): child is HTMLElement => child instanceof HTMLElement,
-  );
-  const collected = directChildren.filter((child) =>
-    child.matches(".midcol, .entry, .thumbnail"),
-  );
-
-  if (collected.length > 0) {
-    return collected;
-  }
-
-  const entry = container.querySelector<HTMLElement>(":scope > .entry");
-  return entry ? [entry] : [container];
-}
-
-function collectOldCommentDimTargets(container: HTMLElement): HTMLElement[] {
+function collectOldDimTargets(container: HTMLElement): HTMLElement[] {
   const directChildren = Array.from(container.children).filter(
     (child): child is HTMLElement => child instanceof HTMLElement,
   );
