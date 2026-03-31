@@ -284,6 +284,8 @@ function ensureInjectedStyles(documentRef: Document): void {
   style.textContent = `
     .probably-ai-badge {
       display: inline-flex;
+      position: relative;
+      z-index: 1;
       flex: 0 0 auto;
       align-items: center;
       gap: 0.35rem;

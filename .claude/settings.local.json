@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__fff__grep",
+      "Bash(npm test:*)",
+      "Skill(update-config)",
+      "WebFetch(domain:github.com)",
+      "Bash(npx vitest:*)",
+      "Bash(export PATH=\"/usr/local/bin:/opt/homebrew/bin:$HOME/.nvm/versions/node/*/bin:$PATH\")",
+      "Bash(source ~/.nvm/nvm.sh)",
+      "Bash(find /Users/taekim/Documents/projects/sideprojects/probably-ai/src -type f \\\\\\(-name *.ts -o -name *.json -o -name *.css \\\\\\))",
+      "Read(//Users/taekim/.nvm/versions/node/**)",
+      "Read(//usr/local/bin/**)",
+      "Bash(export PATH=\"$HOME/.nvm/versions/node/v25.3.0/bin:$PATH\")",
+      "Bash(node_modules/.bin/vitest run:*)"
+    ]
+  }
+}
