@@ -56,6 +56,26 @@ describe("rule matching", () => {
     expect(matchesAnyRule("It's not coffee. It's a lifestyle.", compiled)).toBe(true);
   });
 
+  it("does not let regex rules cross preserved paragraph breaks", () => {
+    const compiled = compileRules([
+      {
+        id: "regex-rule",
+        pattern:
+          "it'?s?\\s+not\\s+([^.!?\\n]{1,60})\\s*[,.!?:;-]?\\s+[Ii]t'?s?\\s+([^.!?\\n]{1,60})",
+        enabled: true,
+        source: "user",
+        matchType: "regex",
+      },
+    ]);
+
+    expect(
+      matchesAnyRule(
+        "what makes it not getting traction amongst ppls\n\ntry it out :- turbochat.live",
+        compiled,
+      ),
+    ).toBe(false);
+  });
+
   it("matches em dashes by default", () => {
     const compiled = compileRules(DEFAULT_RULES);
     expect(matchesAnyRule("This sentence uses an em dash — like this.", compiled)).toBe(true);
@@ -85,6 +105,13 @@ describe("findMatchingRules", () => {
   it("returns only the rules that match", () => {
     const compiled = compileRules(DEFAULT_RULES);
     const result = findMatchingRules("This changes everything for founders.", compiled);
+    expect(result).toHaveLength(1);
+    expect(result[0].pattern).toBe("changes everything");
+  });
+
+  it("keeps literal rules whitespace-tolerant across line breaks", () => {
+    const compiled = compileRules(DEFAULT_RULES);
+    const result = findMatchingRules("This changes\n\neverything for founders.", compiled);
     expect(result).toHaveLength(1);
     expect(result[0].pattern).toBe("changes everything");
   });

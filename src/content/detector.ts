@@ -42,6 +42,7 @@ interface ScanCandidate {
   placement: Placement;
   contentTargets: HTMLElement[];
   dimTargets: HTMLElement[];
+  matchText: string;
   text: string;
   previewText: string;
   isMainSubmission: boolean;
@@ -131,8 +132,8 @@ export function scanRedditDocument(
   const candidates = collectCandidates(root, hostname, pathname);
   const candidateStates = candidates.map((candidate) => {
     const matchedRules =
-      settings.enabled && candidate.text.length > 0
-        ? findMatchingRules(candidate.text, compiledRules)
+      settings.enabled && candidate.matchText.length > 0
+        ? findMatchingRules(candidate.matchText, compiledRules)
         : [];
     return {
       candidate,
@@ -1262,7 +1263,7 @@ function buildCandidate({
   placement,
   contentTargets,
   dimTargets = [],
-  text,
+  text: matchText,
   isMainSubmission = false,
   threadKey,
   threadHost,
@@ -1280,7 +1281,8 @@ function buildCandidate({
   threadKey?: string;
   threadHost?: HTMLElement;
 }): ScanCandidate | null {
-  const normalizedText = normalizeText(text);
+  const normalizedMatchText = matchText.trim();
+  const normalizedText = normalizeText(normalizedMatchText);
   if (!normalizedText) {
     return null;
   }
@@ -1297,6 +1299,7 @@ function buildCandidate({
       (element) => element !== indicatorTarget && element !== badgeTarget,
     ),
     dimTargets,
+    matchText: normalizedMatchText,
     text: normalizedText,
     previewText: createPreviewText(normalizedText),
     isMainSubmission,
@@ -1486,12 +1489,16 @@ function collectText(
     });
   }
 
-  const collected = elements
+  const uniqueElements = Array.from(new Set(elements));
+  const leafElements = uniqueElements.filter(
+    (element) => !uniqueElements.some((other) => other !== element && element.contains(other)),
+  );
+  const collected = leafElements
     .map((element) => normalizeText(element.textContent ?? ""))
     .filter(Boolean);
 
   if (collected.length > 0) {
-    return normalizeText(collected.join(" "));
+    return collected.join("\n\n");
   }
 
   return normalizeText(container.textContent ?? "");

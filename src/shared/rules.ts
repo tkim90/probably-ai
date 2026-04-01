@@ -94,7 +94,7 @@ export function compileRules(rules: StoredRule[]): CompiledRule[] {
         ...rule,
         regex:
           rule.matchType === "literal"
-            ? new RegExp(escapeRegex(normalizeForMatching(rule.pattern)), RULE_FLAGS)
+            ? new RegExp(escapeRegex(normalizeForLiteralMatching(rule.pattern)), RULE_FLAGS)
             : new RegExp(rule.pattern, RULE_FLAGS),
       },
     ];
@@ -102,11 +102,14 @@ export function compileRules(rules: StoredRule[]): CompiledRule[] {
 }
 
 export function findMatchingRules(text: string, rules: CompiledRule[]): CompiledRule[] {
-  const normalizedText = normalizeForMatching(text);
+  const normalizedLiteralText = normalizeForLiteralMatching(text);
+  const normalizedRegexText = normalizeForRegexMatching(text);
 
   return rules.filter((rule) => {
     rule.regex.lastIndex = 0;
-    return rule.regex.test(rule.matchType === "literal" ? normalizedText : text);
+    return rule.regex.test(
+      rule.matchType === "literal" ? normalizedLiteralText : normalizedRegexText,
+    );
   });
 }
 
@@ -138,8 +141,16 @@ function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function normalizeForMatching(value: string): string {
+function normalizeForLiteralMatching(value: string): string {
+  return normalizeWhitespace(normalizeForRegexMatching(value));
+}
+
+function normalizeForRegexMatching(value: string): string {
   return value.replace(/[‘’]/g, "’");
+}
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
 }
 
 export function parseRulesText(text: string, matchType: MatchType): StoredRule[] {

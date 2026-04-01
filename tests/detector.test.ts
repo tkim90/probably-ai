@@ -74,6 +74,42 @@ describe("scanRedditDocument", () => {
     expect(stored).toContain("changes everything");
   });
 
+  it("does not flag regex matches that only appear after collapsing paragraph breaks", () => {
+    document.body.innerHTML = `
+      <shreddit-post>
+        <div slot="credit-bar">
+          <div slot="author-metadata"><span>u/example</span></div>
+        </div>
+        <a slot="title">Help me review this</a>
+        <div slot="text-body">
+          <p>what makes it not getting traction amongst ppls</p>
+          <p>try it out :- turbochat.live</p>
+        </div>
+      </shreddit-post>
+    `;
+
+    const matches = scanRedditDocument(
+      document,
+      createSettings({
+        rules: [
+          {
+            id: "regex-rule",
+            pattern:
+              "it'?s?\\s+not\\s+([^.!?\\n]{1,60})\\s*[,.!?:;-]?\\s+[Ii]t'?s?\\s+([^.!?\\n]{1,60})",
+            enabled: true,
+            source: "user",
+            matchType: "regex",
+          },
+        ],
+      }),
+      "www.reddit.com",
+      "/r/test/",
+    );
+
+    expect(matches).toBe(0);
+    expect(document.querySelectorAll(BADGE_SELECTOR)).toHaveLength(0);
+  });
+
   it("appends badge to first child of credit-bar when author-metadata has not yet rendered", () => {
     document.body.innerHTML = `
       <shreddit-post>
