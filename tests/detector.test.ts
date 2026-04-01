@@ -526,7 +526,7 @@ describe("scanRedditDocument", () => {
     expect(getThreadFilterIconSrc(button)).toContain("data:image/svg+xml");
     expect(styles).toContain("justify-content: center");
     expect(styles).toContain("color: #111111");
-    comments.forEach((comment) => expect(comment.style.display).toBe("none"));
+    comments.forEach((comment) => expect(comment.style.visibility).toBe("hidden"));
   });
 
   it("anchors the filtered-comment control to Reddit's comment tree container fallback", () => {
@@ -660,7 +660,7 @@ describe("scanRedditDocument", () => {
     button?.click();
     expect(button?.textContent).toBe("Show 1 filtered comments");
     expect(getThreadFilterIconSrc(button)).toBe(showIconSrc);
-    expect(comment?.style.display).toBe("none");
+    expect(comment?.style.visibility).toBe("hidden");
   });
 
   it("hides the outer current Reddit comment shell when fallback comment markup is used", () => {
@@ -709,7 +709,7 @@ describe("scanRedditDocument", () => {
     expect(document.querySelectorAll(THREAD_FILTER_SELECTOR)).toHaveLength(1);
     expect(thread?.firstElementChild?.matches(THREAD_FILTER_SELECTOR)).toBe(true);
     expect(button?.textContent).toBe("Show 1 filtered comments");
-    expect(matchedShell?.style.display).toBe("none");
+    expect(matchedShell?.style.visibility).toBe("hidden");
     expect(matchedBody?.style.display ?? "").toBe("");
     expect(nextShell?.style.display ?? "").toBe("");
 
@@ -894,7 +894,7 @@ describe("scanRedditDocument", () => {
     expect(threadButton?.textContent).toBe("Show 3 filtered comments");
     const showIconSrc = getThreadFilterIconSrc(threadButton);
     expect(showIconSrc).toContain("data:image/svg+xml");
-    comments.forEach((comment) => expect(comment.style.display).toBe("none"));
+    comments.forEach((comment) => expect(comment.style.visibility).toBe("hidden"));
 
     threadButton?.click();
 

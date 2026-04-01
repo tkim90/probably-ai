@@ -1346,11 +1346,24 @@ function restoreElementStyle(
 }
 
 function hideElement(element: HTMLElement): void {
-  setElementStyle(element, HIDDEN_ATTRIBUTE, ORIGINAL_DISPLAY_ATTRIBUTE, "display", "none");
+  if (element.getAttribute(HIDDEN_ATTRIBUTE) === "true") return;
+  element.setAttribute(HIDDEN_ATTRIBUTE, "true");
+  element.setAttribute(ORIGINAL_DISPLAY_ATTRIBUTE, element.style.cssText);
+  Object.assign(element.style, {
+    visibility: "hidden",
+    height: "0",
+    overflow: "hidden",
+    minHeight: "0",
+    padding: "0",
+    margin: "0",
+  });
 }
 
 function revealElement(element: HTMLElement): void {
-  restoreElementStyle(element, HIDDEN_ATTRIBUTE, ORIGINAL_DISPLAY_ATTRIBUTE, "display");
+  if (element.getAttribute(HIDDEN_ATTRIBUTE) !== "true") return;
+  element.style.cssText = element.getAttribute(ORIGINAL_DISPLAY_ATTRIBUTE) ?? "";
+  element.removeAttribute(HIDDEN_ATTRIBUTE);
+  element.removeAttribute(ORIGINAL_DISPLAY_ATTRIBUTE);
 }
 
 function dimElement(element: HTMLElement): void {
