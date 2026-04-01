@@ -1,5 +1,5 @@
-import { compileRules, findMatchingRules, normalizeText } from "../shared/rules";
-import type { CompiledRule, ExtensionSettings } from "../shared/types";
+import { compileRules, findRuleMatches, normalizeText } from "../shared/rules";
+import type { CompiledRule, ExtensionSettings, RuleMatch } from "../shared/types";
 import { isExtensionContextInvalidated } from "../shared/utils";
 
 const STYLE_ELEMENT_ID = "probably-ai-extension-style";
@@ -15,6 +15,8 @@ const DIMMED_ATTRIBUTE = "data-probably-ai-dimmed";
 const ORIGINAL_OPACITY_ATTRIBUTE = "data-probably-ai-original-opacity";
 const THREAD_FILTER_ATTRIBUTE = "data-probably-ai-thread-filter";
 const TOOLTIP_ATTRIBUTE = "data-probably-ai-tooltip";
+const HIGHLIGHT_ATTRIBUTE = "data-probably-ai-highlight";
+const BADGE_CANDIDATE_KEY_ATTRIBUTE = "data-probably-ai-candidate-key";
 const THREAD_FILTER_TOGGLE_ATTRIBUTE = "data-probably-ai-thread-filter-toggle";
 const THREAD_FILTER_ICON_ATTRIBUTE = "data-probably-ai-thread-filter-icon";
 const THREAD_FILTER_LABEL_ATTRIBUTE = "data-probably-ai-thread-filter-label";
@@ -32,16 +34,28 @@ type Placement = "after" | "prepend" | "append";
 type CandidateKind = "post" | "comment";
 type PlatformKind = "current" | "old";
 
+interface CollectedTextPart {
+  element: HTMLElement;
+  text: string;
+}
+
+interface HighlightPart extends CollectedTextPart {
+  start: number;
+  end: number;
+}
+
 interface ScanCandidate {
   key: string;
   kind: CandidateKind;
   platform: PlatformKind;
   container: HTMLElement;
+  contentRoot: HTMLElement;
   indicatorTarget: HTMLElement;
   badgeTarget: HTMLElement;
   placement: Placement;
   contentTargets: HTMLElement[];
   dimTargets: HTMLElement[];
+  highlightParts: HighlightPart[];
   matchText: string;
   text: string;
   previewText: string;
@@ -54,6 +68,7 @@ interface CandidateState {
   candidate: ScanCandidate;
   matched: boolean;
   matchedRules: CompiledRule[];
+  ruleMatches: RuleMatch[];
 }
 
 interface ThreadGroup {
@@ -85,12 +100,19 @@ const getThreadKey = makeKeyGenerator("thread");
 const expandedCandidateKeys = new Set<string>();
 const revealedThreadKeys = new Set<string>();
 let activeCandidates = new Map<string, ScanCandidate>();
+let activeCandidateStates = new Map<string, CandidateState>();
 let activeThreadGroups = new Map<string, ThreadGroup>();
+let activeHighlightedCandidateKey: string | null = null;
+let activeHoveredCandidateKey: string | null = null;
+let activeTooltipCandidateKey: string | null = null;
+let hoverHideTimeoutId: number | null = null;
+let lastPointerPosition: { x: number; y: number } | null = null;
 const FALLBACK_ICON_URLS: Record<string, string> = {
   [SHOW_FILTERED_COMMENTS_ICON]: createSvgDataUrl(SHOW_FILTERED_COMMENTS_ICON_SVG),
   [HIDE_FILTERED_COMMENTS_ICON]: createSvgDataUrl(HIDE_FILTERED_COMMENTS_ICON_SVG),
   [BADGE_WARNING_ICON]: createSvgDataUrl(BADGE_WARNING_ICON_SVG),
 };
+const HOVER_HIDE_DELAY_MS = 90;
 
 export const BADGE_SELECTOR = `[${BADGE_ATTRIBUTE}="true"]`;
 export const COLLAPSE_SELECTOR = `[${COLLAPSE_ATTRIBUTE}="true"]`;
@@ -98,11 +120,13 @@ export const TOGGLE_SELECTOR = `[${TOGGLE_ATTRIBUTE}="true"]`;
 export const THREAD_FILTER_SELECTOR = `[${THREAD_FILTER_ATTRIBUTE}="true"]`;
 export const THREAD_FILTER_TOGGLE_SELECTOR = `[${THREAD_FILTER_TOGGLE_ATTRIBUTE}="true"]`;
 export const TOOLTIP_SELECTOR = `[${TOOLTIP_ATTRIBUTE}="true"]`;
+export const HIGHLIGHT_SELECTOR = `[${HIGHLIGHT_ATTRIBUTE}="true"]`;
 export const PROCESSED_SELECTOR = `[${PROCESSED_ATTRIBUTE}="true"]`;
 export const INTERNAL_STYLE_ID = STYLE_ELEMENT_ID;
 
 export function clearInjectedUi(root: ParentNode = document): void {
-  removeTooltip();
+  removeTooltip({ clearHoverState: true });
+  removeHoverHighlights(root);
   root.querySelectorAll<HTMLElement>(TOOLTIP_SELECTOR).forEach((el) => el.remove());
   root.querySelectorAll<HTMLElement>(BADGE_SELECTOR).forEach((badge) => badge.remove());
   root.querySelectorAll<HTMLElement>(COLLAPSE_SELECTOR).forEach((control) => control.remove());
@@ -131,17 +155,22 @@ export function scanRedditDocument(
   const compiledRules = compileRules(settings.rules);
   const candidates = collectCandidates(root, hostname, pathname);
   const candidateStates = candidates.map((candidate) => {
-    const matchedRules =
+    const ruleMatches =
       settings.enabled && candidate.matchText.length > 0
-        ? findMatchingRules(candidate.matchText, compiledRules)
+        ? findRuleMatches(candidate.matchText, compiledRules)
         : [];
+    const matchedRules = Array.from(
+      new Map(ruleMatches.map((match) => [match.rule.id, match.rule])).values(),
+    );
     return {
       candidate,
       matched: matchedRules.length > 0,
       matchedRules,
+      ruleMatches,
     };
   });
   const nextActiveCandidates = new Map<string, ScanCandidate>();
+  const nextActiveCandidateStates = new Map<string, CandidateState>();
   const nextThreadGroups = new Map<string, ThreadGroup>();
   const threadAnchors = new Map<string, HTMLElement>();
   let matchCount = 0;
@@ -150,6 +179,7 @@ export function scanRedditDocument(
     const { candidate, matched } = state;
     const threadManaged = isThreadManagedComment(candidate, settings.autoHideDetected);
     nextActiveCandidates.set(candidate.key, candidate);
+    nextActiveCandidateStates.set(candidate.key, state);
     candidate.container.setAttribute(PROCESSED_ATTRIBUTE, "true");
 
     if (matched) {
@@ -195,8 +225,10 @@ export function scanRedditDocument(
 
   syncThreadGroups(nextThreadGroups, settings.autoHideDetected);
   activeCandidates = nextActiveCandidates;
+  activeCandidateStates = nextActiveCandidateStates;
   activeThreadGroups = nextThreadGroups;
   pruneState();
+  syncHoveredTooltip(documentRef);
   return matchCount;
 }
 
@@ -272,6 +304,10 @@ function pruneState(): void {
     if (!activeThreadGroups.has(key)) {
       revealedThreadKeys.delete(key);
     }
+  }
+
+  if (activeHighlightedCandidateKey && !activeCandidateStates.has(activeHighlightedCandidateKey)) {
+    activeHighlightedCandidateKey = null;
   }
 }
 
@@ -354,6 +390,15 @@ function ensureInjectedStyles(documentRef: Document): void {
       content: "\\2022";
       margin-right: 0.4rem;
       color: #D4A017;
+    }
+
+    .probably-ai-highlight {
+      background: rgba(255, 235, 59, 0.5);
+      border-radius: 0.18em;
+      box-decoration-break: clone;
+      -webkit-box-decoration-break: clone;
+      color: #111111;
+      padding: 0;
     }
 
     .probably-ai-post-collapse {
@@ -554,6 +599,7 @@ function syncBadge(candidate: ScanCandidate, matched: boolean, matchedRules: Com
 
   if (existingBadge) {
     existingBadge.dataset.matchedRules = rulePatterns;
+    existingBadge.setAttribute(BADGE_CANDIDATE_KEY_ATTRIBUTE, candidate.key);
     if (existingBadge.parentElement !== candidate.badgeTarget) {
       moveIndicator(existingBadge, candidate.badgeTarget, candidate.placement);
     }
@@ -565,6 +611,7 @@ function syncBadge(candidate: ScanCandidate, matched: boolean, matchedRules: Com
   const badge = doc.createElement("span");
   badge.className = "probably-ai-badge";
   badge.setAttribute(BADGE_ATTRIBUTE, "true");
+  badge.setAttribute(BADGE_CANDIDATE_KEY_ATTRIBUTE, candidate.key);
   badge.dataset.matchedRules = rulePatterns;
 
   const iconWrapper = doc.createElement("span");
@@ -585,24 +632,32 @@ function ensureTooltipListeners(documentRef: Document): void {
   }
   tooltipListenersAttached = true;
 
+  documentRef.body.addEventListener("mousemove", (event) => {
+    updatePointerPosition(event);
+  });
+
   documentRef.body.addEventListener("mouseover", (event) => {
+    updatePointerPosition(event);
     const badge = (event.target as HTMLElement).closest?.<HTMLElement>(BADGE_SELECTOR);
-    if (badge) {
+    const relatedTarget = event.relatedTarget;
+    if (badge && !(relatedTarget instanceof Node && badge.contains(relatedTarget))) {
+      clearScheduledTooltipHide();
+      activeHoveredCandidateKey = getBadgeCandidateKey(badge);
       showTooltip(badge);
     }
   });
 
   documentRef.body.addEventListener("mouseout", (event) => {
+    updatePointerPosition(event);
     const badge = (event.target as HTMLElement).closest?.<HTMLElement>(BADGE_SELECTOR);
-    if (badge) {
-      removeTooltip();
+    const relatedTarget = event.relatedTarget;
+    if (badge && !(relatedTarget instanceof Node && badge.contains(relatedTarget))) {
+      scheduleTooltipHide(documentRef);
     }
   });
 }
 
 function showTooltip(badge: HTMLElement): void {
-  removeTooltip();
-
   const raw = badge.dataset.matchedRules;
   if (!raw) {
     return;
@@ -619,10 +674,29 @@ function showTooltip(badge: HTMLElement): void {
   }
 
   const doc = badge.ownerDocument;
-  const tooltip = doc.createElement("div");
-  tooltip.className = "probably-ai-tooltip";
-  tooltip.setAttribute(TOOLTIP_ATTRIBUTE, "true");
+  const candidateKey = badge.getAttribute(BADGE_CANDIDATE_KEY_ATTRIBUTE) ?? "";
+  activeHoveredCandidateKey = candidateKey || activeHoveredCandidateKey;
 
+  let tooltip = activeTooltip;
+  if (!tooltip || activeTooltipCandidateKey !== candidateKey) {
+    removeTooltip({ clearHoverState: false });
+    tooltip = doc.createElement("div");
+    tooltip.className = "probably-ai-tooltip";
+    tooltip.setAttribute(TOOLTIP_ATTRIBUTE, "true");
+    doc.body.appendChild(tooltip);
+  }
+
+  applyHoverHighlights(candidateKey);
+  populateTooltip(tooltip, patterns);
+  positionTooltip(tooltip, badge);
+  activeTooltip = tooltip;
+  activeTooltipCandidateKey = candidateKey;
+}
+
+function populateTooltip(tooltip: HTMLElement, patterns: string[]): void {
+  tooltip.replaceChildren();
+
+  const doc = tooltip.ownerDocument;
   const header = doc.createElement("div");
   header.className = "probably-ai-tooltip-header";
   header.textContent = "Matched rules";
@@ -637,15 +711,307 @@ function showTooltip(badge: HTMLElement): void {
     list.appendChild(item);
   }
   tooltip.appendChild(list);
-
-  doc.body.appendChild(tooltip);
-  positionTooltip(tooltip, badge);
-  activeTooltip = tooltip;
 }
 
-function removeTooltip(): void {
+function removeTooltip(options: { clearHoverState?: boolean } = {}): void {
+  clearScheduledTooltipHide();
   activeTooltip?.remove();
   activeTooltip = null;
+  activeTooltipCandidateKey = null;
+  removeHoverHighlights();
+
+  if (options.clearHoverState ?? true) {
+    activeHoveredCandidateKey = null;
+  }
+}
+
+function syncHoveredTooltip(documentRef: Document): void {
+  if (!activeHoveredCandidateKey) {
+    return;
+  }
+
+  const state = activeCandidateStates.get(activeHoveredCandidateKey);
+  if (!state?.matched) {
+    removeTooltip({ clearHoverState: true });
+    return;
+  }
+
+  const badge = findBadgeByCandidateKey(documentRef, activeHoveredCandidateKey);
+  if (!badge) {
+    removeTooltip({ clearHoverState: true });
+    return;
+  }
+
+  showTooltip(badge);
+}
+
+function scheduleTooltipHide(documentRef: Document): void {
+  clearScheduledTooltipHide();
+  hoverHideTimeoutId = window.setTimeout(() => {
+    hoverHideTimeoutId = null;
+
+    if (isPointerOverHoveredBadge(documentRef)) {
+      const hoveredBadge = findBadgeByCandidateKey(documentRef, activeHoveredCandidateKey ?? "");
+      if (hoveredBadge) {
+        showTooltip(hoveredBadge);
+        return;
+      }
+    }
+
+    removeTooltip({ clearHoverState: true });
+  }, HOVER_HIDE_DELAY_MS);
+}
+
+function clearScheduledTooltipHide(): void {
+  if (hoverHideTimeoutId !== null) {
+    window.clearTimeout(hoverHideTimeoutId);
+    hoverHideTimeoutId = null;
+  }
+}
+
+function updatePointerPosition(event: MouseEvent): void {
+  lastPointerPosition = {
+    x: event.clientX,
+    y: event.clientY,
+  };
+}
+
+function isPointerOverHoveredBadge(documentRef: Document): boolean {
+  if (!activeHoveredCandidateKey || !lastPointerPosition || !documentRef.elementFromPoint) {
+    return false;
+  }
+
+  const element = documentRef.elementFromPoint(lastPointerPosition.x, lastPointerPosition.y);
+  const badge = element?.closest?.<HTMLElement>(BADGE_SELECTOR);
+  return getBadgeCandidateKey(badge) === activeHoveredCandidateKey;
+}
+
+function getBadgeCandidateKey(badge: HTMLElement | null): string {
+  return badge?.getAttribute(BADGE_CANDIDATE_KEY_ATTRIBUTE) ?? "";
+}
+
+function findBadgeByCandidateKey(root: ParentNode, candidateKey: string): HTMLElement | null {
+  if (!candidateKey) {
+    return null;
+  }
+
+  return (
+    Array.from(root.querySelectorAll<HTMLElement>(BADGE_SELECTOR)).find(
+      (badge) => getBadgeCandidateKey(badge) === candidateKey,
+    ) ?? null
+  );
+}
+
+function applyHoverHighlights(candidateKey: string): void {
+  removeHoverHighlights();
+
+  if (!candidateKey) {
+    return;
+  }
+
+  const state = activeCandidateStates.get(candidateKey);
+  if (!state || state.ruleMatches.length === 0) {
+    return;
+  }
+
+  const highlightRanges = mapRuleMatchesToParts(state.candidate, state.ruleMatches);
+  for (const [part, ranges] of highlightRanges) {
+    applyHighlightRanges(part.element, ranges);
+  }
+
+  activeHighlightedCandidateKey = candidateKey;
+}
+
+function removeHoverHighlights(root: ParentNode = document): void {
+  const wrappers = root.querySelectorAll<HTMLElement>(HIGHLIGHT_SELECTOR);
+  wrappers.forEach((wrapper) => unwrapElement(wrapper));
+  activeHighlightedCandidateKey = null;
+}
+
+function mapRuleMatchesToParts(
+  candidate: ScanCandidate,
+  ruleMatches: RuleMatch[],
+): Map<HighlightPart, Array<{ start: number; end: number }>> {
+  const highlightRanges = new Map<HighlightPart, Array<{ start: number; end: number }>>();
+
+  for (const match of ruleMatches) {
+    for (const part of candidate.highlightParts) {
+      if (match.end <= part.start || match.start >= part.end) {
+        continue;
+      }
+
+      const localStart = Math.max(match.start, part.start) - part.start;
+      const localEnd = Math.min(match.end, part.end) - part.start;
+      if (localEnd <= localStart) {
+        continue;
+      }
+
+      const existing = highlightRanges.get(part) ?? [];
+      existing.push({ start: localStart, end: localEnd });
+      highlightRanges.set(part, existing);
+    }
+  }
+
+  return new Map(
+    Array.from(highlightRanges.entries()).map(([part, ranges]) => [part, mergeRanges(ranges)]),
+  );
+}
+
+function mergeRanges(ranges: Array<{ start: number; end: number }>): Array<{ start: number; end: number }> {
+  if (ranges.length <= 1) {
+    return ranges;
+  }
+
+  const sorted = [...ranges].sort((a, b) => a.start - b.start);
+  const merged: Array<{ start: number; end: number }> = [sorted[0]];
+
+  for (const range of sorted.slice(1)) {
+    const previous = merged[merged.length - 1];
+    if (range.start <= previous.end) {
+      previous.end = Math.max(previous.end, range.end);
+      continue;
+    }
+
+    merged.push({ ...range });
+  }
+
+  return merged;
+}
+
+function applyHighlightRanges(
+  element: HTMLElement,
+  ranges: Array<{ start: number; end: number }>,
+): void {
+  if (ranges.length === 0) {
+    return;
+  }
+
+  const rawText = element.textContent ?? "";
+  const normalized = normalizeTextWithMap(rawText);
+
+  for (const range of [...ranges].sort((a, b) => b.start - a.start)) {
+    const mapped = mapNormalizedRangeToRawRange(normalized, range);
+    if (!mapped || mapped.end <= mapped.start) {
+      continue;
+    }
+
+    wrapTextRange(element, mapped.start, mapped.end);
+  }
+}
+
+function mapNormalizedRangeToRawRange(
+  normalized: ReturnType<typeof normalizeTextWithMap>,
+  range: { start: number; end: number },
+): { start: number; end: number } | null {
+  const startSpan = normalized.map[range.start];
+  const endSpan = normalized.map[range.end - 1];
+
+  if (!startSpan || !endSpan) {
+    return null;
+  }
+
+  return {
+    start: startSpan.start,
+    end: endSpan.end,
+  };
+}
+
+function wrapTextRange(element: HTMLElement, start: number, end: number): void {
+  const doc = element.ownerDocument;
+  const boundary = resolveTextBoundary(element, start, false);
+  const endBoundary = resolveTextBoundary(element, end, true);
+
+  if (!doc || !boundary || !endBoundary) {
+    return;
+  }
+
+  const range = doc.createRange();
+  range.setStart(boundary.node, boundary.offset);
+  range.setEnd(endBoundary.node, endBoundary.offset);
+
+  if (range.collapsed) {
+    return;
+  }
+
+  const wrapper = doc.createElement("mark");
+  wrapper.className = "probably-ai-highlight";
+  wrapper.setAttribute(HIGHLIGHT_ATTRIBUTE, "true");
+
+  const fragment = range.extractContents();
+  if (!fragment.textContent?.length) {
+    return;
+  }
+
+  wrapper.appendChild(fragment);
+  range.insertNode(wrapper);
+}
+
+function resolveTextBoundary(
+  element: HTMLElement,
+  offset: number,
+  isEnd: boolean,
+): { node: Text; offset: number } | null {
+  const textNodes = collectTextNodes(element);
+  let remaining = offset;
+
+  for (const node of textNodes) {
+    const length = node.textContent?.length ?? 0;
+    if (remaining < length) {
+      return {
+        node,
+        offset: remaining,
+      };
+    }
+
+    if (remaining === length) {
+      return {
+        node,
+        offset: isEnd ? length : remaining,
+      };
+    }
+
+    remaining -= length;
+  }
+
+  const lastNode = textNodes[textNodes.length - 1];
+  if (!lastNode) {
+    return null;
+  }
+
+  return {
+    node: lastNode,
+    offset: lastNode.textContent?.length ?? 0,
+  };
+}
+
+function collectTextNodes(element: HTMLElement): Text[] {
+  const walker = element.ownerDocument.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  let current = walker.nextNode();
+
+  while (current) {
+    if (current.textContent && current.textContent.length > 0) {
+      nodes.push(current as Text);
+    }
+
+    current = walker.nextNode();
+  }
+
+  return nodes;
+}
+
+function unwrapElement(element: HTMLElement): void {
+  const parent = element.parentNode;
+  if (!parent) {
+    return;
+  }
+
+  while (element.firstChild) {
+    parent.insertBefore(element.firstChild, element);
+  }
+
+  parent.removeChild(element);
+  parent.normalize();
 }
 
 function positionTooltip(tooltip: HTMLElement, anchor: HTMLElement): void {
@@ -1116,7 +1482,7 @@ function collectCurrentRedditPosts(
         ]) ?? container;
       const indicatorTarget = controlTarget ?? fallbackTarget;
       const badgeTarget = findCurrentPostBadgeTarget(container, indicatorTarget);
-      const text = collectText(container, [
+      const textParts = collectTextParts(container, [
         "a[data-testid='post-title-text']",
         "[slot='title']",
         "h1",
@@ -1130,16 +1496,19 @@ function collectCurrentRedditPosts(
         ".entry .expando .md",
         "p",
       ]);
+      const text = joinTextParts(textParts);
 
       return buildCandidate({
         kind: "post",
         platform: "current",
         container,
+        contentRoot: container,
         indicatorTarget,
         badgeTarget,
         placement: controlTarget ? "append" : "prepend",
         contentTargets,
         dimTargets: collectCurrentPostDimTargets(container),
+        textParts,
         text,
         isMainSubmission: isDetailPage && index === 0,
       });
@@ -1148,42 +1517,42 @@ function collectCurrentRedditPosts(
 }
 
 function collectCurrentRedditComments(root: Document | Element): ScanCandidate[] {
-  const containers = pickCurrentContainers(root, "shreddit-comment", [
-    "article[data-testid='comment']",
-    "div[data-testid='comment']",
-  ]);
+  const commentSources = collectCurrentCommentSources(root);
   const nestedSelectors = "shreddit-comment, article[data-testid='comment'], div[data-testid='comment']";
 
-  return containers
-    .map((container) => {
-      const metadataTarget = findMetadataTarget(container, [
+  return commentSources
+    .map(({ container, contentRoot }) => {
+      const metadataTarget = findMetadataTarget(contentRoot, [
         "[slot='commentMeta']",
         "[slot='metadata']",
         "[data-testid='comment_author_line']",
         "faceplate-tracker[noun='comment_author']",
       ]);
       const fallbackTarget =
-        selectFirst(container, [
+        selectFirst(contentRoot, [
           "[slot='comment']",
           "[data-testid='comment']",
           "p",
-        ]) ?? container;
+        ]) ?? contentRoot;
       const threadHost = findThreadGroupHost(container);
-      const text = collectText(container, [
+      const textParts = collectTextParts(contentRoot, [
         "[slot='comment']",
         "[data-testid='comment']",
         "p",
       ], nestedSelectors);
+      const text = joinTextParts(textParts);
 
       return buildCandidate({
         kind: "comment",
         platform: "current",
         container,
+        contentRoot,
         indicatorTarget: metadataTarget ?? fallbackTarget,
         badgeTarget: metadataTarget ?? fallbackTarget,
         placement: metadataTarget ? "append" : "prepend",
         contentTargets: [container],
-        dimTargets: collectCurrentCommentDimTargets(container),
+        dimTargets: collectCurrentCommentDimTargets(contentRoot),
+        textParts,
         text,
         threadHost,
         threadKey: getThreadKey(threadHost),
@@ -1206,21 +1575,24 @@ function collectOldRedditPosts(
         ".entry .usertext-body",
         ".entry .expando",
       ]);
-      const text = collectText(container, [
+      const textParts = collectTextParts(container, [
         ".entry .title",
         ".entry .usertext-body .md",
         ".entry .expando .md",
       ]);
+      const text = joinTextParts(textParts);
 
       return buildCandidate({
         kind: "post",
         platform: "old",
         container,
+        contentRoot: container,
         indicatorTarget,
         badgeTarget: indicatorTarget,
         placement: "append",
         contentTargets,
         dimTargets: collectOldDimTargets(container),
+        textParts,
         text,
         isMainSubmission: isDetailPage && index === 0,
       });
@@ -1234,18 +1606,25 @@ function collectOldRedditComments(root: Document | Element): ScanCandidate[] {
       const metadataTarget = findMetadataTarget(container, [".entry .tagline"]);
       const indicatorTarget = metadataTarget ?? (selectFirst(container, [".entry"]) ?? container);
       const contentTargets = collectUniqueElements(container, [".entry .usertext-body", ".entry .md"]);
-      const text = collectText(container, [".entry .usertext-body .md", ".entry .md"], ".thing.comment");
+      const textParts = collectTextParts(
+        container,
+        [".entry .usertext-body .md", ".entry .md"],
+        ".thing.comment",
+      );
+      const text = joinTextParts(textParts);
       const threadHost = findOldThreadGroupHost(container);
 
       return buildCandidate({
         kind: "comment",
         platform: "old",
         container,
+        contentRoot: container,
         indicatorTarget,
         badgeTarget: indicatorTarget,
         placement: "append",
         contentTargets,
         dimTargets: collectOldDimTargets(container),
+        textParts,
         text,
         threadHost,
         threadKey: getThreadKey(threadHost),
@@ -1258,11 +1637,13 @@ function buildCandidate({
   kind,
   platform,
   container,
+  contentRoot,
   indicatorTarget,
   badgeTarget = indicatorTarget,
   placement,
   contentTargets,
   dimTargets = [],
+  textParts,
   text: matchText,
   isMainSubmission = false,
   threadKey,
@@ -1271,11 +1652,13 @@ function buildCandidate({
   kind: CandidateKind;
   platform: PlatformKind;
   container: HTMLElement;
+  contentRoot: HTMLElement;
   indicatorTarget: HTMLElement;
   badgeTarget?: HTMLElement;
   placement: Placement;
   contentTargets: HTMLElement[];
   dimTargets?: HTMLElement[];
+  textParts: CollectedTextPart[];
   text: string;
   isMainSubmission?: boolean;
   threadKey?: string;
@@ -1292,6 +1675,7 @@ function buildCandidate({
     kind,
     platform,
     container,
+    contentRoot,
     indicatorTarget,
     badgeTarget,
     placement,
@@ -1299,6 +1683,7 @@ function buildCandidate({
       (element) => element !== indicatorTarget && element !== badgeTarget,
     ),
     dimTargets,
+    highlightParts: buildHighlightParts(textParts),
     matchText: normalizedMatchText,
     text: normalizedText,
     previewText: createPreviewText(normalizedText),
@@ -1473,11 +1858,67 @@ function pickCurrentContainers(
   );
 }
 
-function collectText(
+function collectCurrentCommentSources(
+  root: Document | Element,
+): Array<{ container: HTMLElement; contentRoot: HTMLElement }> {
+  const preferred = Array.from(root.querySelectorAll<HTMLElement>("shreddit-comment"));
+  if (preferred.length > 0) {
+    return preferred.map((container) => ({
+      container,
+      contentRoot: container,
+    }));
+  }
+
+  const fallbackRoots = [
+    ...root.querySelectorAll<HTMLElement>("article[data-testid='comment'], div[data-testid='comment']"),
+  ];
+  const sources = new Map<HTMLElement, { container: HTMLElement; contentRoot: HTMLElement }>();
+
+  for (const contentRoot of fallbackRoots) {
+    const container = resolveCurrentCommentContainer(contentRoot);
+    if (!sources.has(container)) {
+      sources.set(container, {
+        container,
+        contentRoot,
+      });
+    }
+  }
+
+  return [...sources.values()];
+}
+
+function resolveCurrentCommentContainer(contentRoot: HTMLElement): HTMLElement {
+  const commentHost = contentRoot.closest<HTMLElement>("shreddit-comment");
+  if (commentHost) {
+    return commentHost;
+  }
+
+  return contentRoot.parentElement ?? contentRoot;
+}
+
+function buildHighlightParts(parts: CollectedTextPart[]): HighlightPart[] {
+  const highlightParts: HighlightPart[] = [];
+  let offset = 0;
+
+  for (const part of parts) {
+    const start = offset;
+    const end = start + part.text.length;
+    highlightParts.push({
+      ...part,
+      start,
+      end,
+    });
+    offset = end + 2;
+  }
+
+  return highlightParts;
+}
+
+function collectTextParts(
   container: HTMLElement,
   selectors: string[],
   nestedSelectors?: string,
-): string {
+): CollectedTextPart[] {
   let elements = selectors.flatMap((selector) =>
     Array.from(container.querySelectorAll<HTMLElement>(selector)),
   );
@@ -1494,14 +1935,65 @@ function collectText(
     (element) => !uniqueElements.some((other) => other !== element && element.contains(other)),
   );
   const collected = leafElements
-    .map((element) => normalizeText(element.textContent ?? ""))
-    .filter(Boolean);
+    .map((element) => ({
+      element,
+      text: normalizeText(element.textContent ?? ""),
+    }))
+    .filter((part) => part.text.length > 0);
 
   if (collected.length > 0) {
-    return collected.join("\n\n");
+    return collected;
   }
 
-  return normalizeText(container.textContent ?? "");
+  const fallbackText = normalizeText(container.textContent ?? "");
+  return fallbackText.length > 0
+    ? [
+        {
+          element: container,
+          text: fallbackText,
+        },
+      ]
+    : [];
+}
+
+function joinTextParts(parts: CollectedTextPart[]): string {
+  return parts.map((part) => part.text).join("\n\n");
+}
+
+function normalizeTextWithMap(
+  value: string,
+): {
+  text: string;
+  map: Array<{ start: number; end: number }>;
+} {
+  const output: string[] = [];
+  const map: Array<{ start: number; end: number }> = [];
+  let index = 0;
+
+  while (index < value.length) {
+    if (/\s/u.test(value[index])) {
+      const start = index;
+      while (index < value.length && /\s/u.test(value[index])) {
+        index += 1;
+      }
+
+      if (output.length > 0 && index < value.length) {
+        output.push(" ");
+        map.push({ start, end: index });
+      }
+
+      continue;
+    }
+
+    output.push(value[index]);
+    map.push({ start: index, end: index + 1 });
+    index += 1;
+  }
+
+  return {
+    text: output.join(""),
+    map,
+  };
 }
 
 function collectUniqueElements(container: HTMLElement, selectors: string[]): HTMLElement[] {

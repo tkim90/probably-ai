@@ -1,6 +1,7 @@
 import {
   BADGE_SELECTOR,
   COLLAPSE_SELECTOR,
+  HIGHLIGHT_SELECTOR,
   INTERNAL_STYLE_ID,
   THREAD_FILTER_SELECTOR,
   THREAD_FILTER_TOGGLE_SELECTOR,
@@ -114,18 +115,41 @@ function handleMutations(mutations: MutationRecord[]): void {
 }
 
 function isInternalMutation(mutation: MutationRecord): boolean {
+  if (mutation.type === "characterData") {
+    return isInternalElement(resolveMutationElement(mutation.target));
+  }
+
   const nodes = [...mutation.addedNodes, ...mutation.removedNodes];
   if (nodes.length === 0) {
+    return isInternalElement(resolveMutationElement(mutation.target));
+  }
+
+  const hasInternalUi = nodes.some((node) => isInternalNode(node));
+  if (!hasInternalUi) {
     return false;
   }
 
-  return nodes.every((node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      return isInternalElement(node.parentElement);
-    }
+  return nodes.every((node) => isInternalNode(node) || node.nodeType === Node.TEXT_NODE);
+}
 
-    return isInternalElement(node instanceof HTMLElement ? node : node.parentElement);
-  });
+function resolveMutationElement(node: Node | null): Element | null {
+  if (!node) {
+    return null;
+  }
+
+  if (node instanceof Element) {
+    return node;
+  }
+
+  return node.parentElement;
+}
+
+function isInternalNode(node: Node): boolean {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return isInternalElement(node.parentElement);
+  }
+
+  return isInternalElement(node instanceof Element ? node : node.parentElement);
 }
 
 function isInternalElement(element: Element | null): boolean {
@@ -141,10 +165,12 @@ function isInternalElement(element: Element | null): boolean {
     element.matches(THREAD_FILTER_SELECTOR) ||
     element.matches(THREAD_FILTER_TOGGLE_SELECTOR) ||
     element.matches(TOOLTIP_SELECTOR) ||
+    element.matches(HIGHLIGHT_SELECTOR) ||
     element.closest(BADGE_SELECTOR) !== null ||
     element.closest(COLLAPSE_SELECTOR) !== null ||
     element.closest(THREAD_FILTER_SELECTOR) !== null ||
-    element.closest(TOOLTIP_SELECTOR) !== null
+    element.closest(TOOLTIP_SELECTOR) !== null ||
+    element.closest(HIGHLIGHT_SELECTOR) !== null
   );
 }
 

@@ -1,5 +1,11 @@
 import { cloneDefaultRules } from "./defaultRules";
-import type { CompiledRule, ExtensionSettings, MatchType, StoredRule } from "./types";
+import type {
+  CompiledRule,
+  ExtensionSettings,
+  MatchType,
+  RuleMatch,
+  StoredRule,
+} from "./types";
 
 const RULE_FLAGS = "iu";
 
@@ -102,15 +108,57 @@ export function compileRules(rules: StoredRule[]): CompiledRule[] {
 }
 
 export function findMatchingRules(text: string, rules: CompiledRule[]): CompiledRule[] {
-  const normalizedLiteralText = normalizeForLiteralMatching(text);
-  const normalizedRegexText = normalizeForRegexMatching(text);
+  const seen = new Set<string>();
+  const matches: CompiledRule[] = [];
 
-  return rules.filter((rule) => {
-    rule.regex.lastIndex = 0;
-    return rule.regex.test(
-      rule.matchType === "literal" ? normalizedLiteralText : normalizedRegexText,
-    );
-  });
+  for (const match of findRuleMatches(text, rules)) {
+    if (seen.has(match.rule.id)) {
+      continue;
+    }
+
+    seen.add(match.rule.id);
+    matches.push(match.rule);
+  }
+
+  return matches;
+}
+
+export function findRuleMatches(text: string, rules: CompiledRule[]): RuleMatch[] {
+  const literalTarget = normalizeWhitespaceWithMap(normalizeForRegexMatching(text));
+  const regexTarget = normalizeForRegexMatching(text);
+  const regexMap = createIdentityMap(regexTarget.length);
+  const matches: RuleMatch[] = [];
+
+  for (const rule of rules) {
+    const target = rule.matchType === "literal" ? literalTarget.text : regexTarget;
+    const spans = rule.matchType === "literal" ? literalTarget.map : regexMap;
+    const regex = createGlobalRegex(rule.regex);
+
+    for (const match of target.matchAll(regex)) {
+      const matchedText = match[0] ?? "";
+      if (matchedText.length === 0) {
+        continue;
+      }
+
+      const startIndex = match.index ?? 0;
+      const endIndex = startIndex + matchedText.length;
+      const start = spans[startIndex]?.start;
+      const end = spans[endIndex - 1]?.end;
+
+      if (start === undefined || end === undefined || end <= start) {
+        continue;
+      }
+
+      matches.push({
+        rule,
+        start,
+        end,
+        text: text.slice(start, end),
+      });
+    }
+  }
+
+  return matches;
 }
 
 export function matchesAnyRule(text: string, rules: CompiledRule[]): boolean {
@@ -151,6 +199,54 @@ function normalizeForRegexMatching(value: string): string {
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function createGlobalRegex(regex: RegExp): RegExp {
+  const flags = regex.flags.includes("g") ? regex.flags : `${regex.flags}g`;
+  return new RegExp(regex.source, flags);
+}
+
+function createIdentityMap(length: number): Array<{ start: number; end: number }> {
+  return Array.from({ length }, (_, index) => ({
+    start: index,
+    end: index + 1,
+  }));
+}
+
+function normalizeWhitespaceWithMap(
+  value: string,
+): {
+  text: string;
+  map: Array<{ start: number; end: number }>;
+} {
+  const output: string[] = [];
+  const map: Array<{ start: number; end: number }> = [];
+  let index = 0;
+
+  while (index < value.length) {
+    if (/\s/u.test(value[index])) {
+      const start = index;
+      while (index < value.length && /\s/u.test(value[index])) {
+        index += 1;
+      }
+
+      if (output.length > 0 && index < value.length) {
+        output.push(" ");
+        map.push({ start, end: index });
+      }
+
+      continue;
+    }
+
+    output.push(value[index]);
+    map.push({ start: index, end: index + 1 });
+    index += 1;
+  }
+
+  return {
+    text: output.join(""),
+    map,
+  };
 }
 
 export function parseRulesText(text: string, matchType: MatchType): StoredRule[] {

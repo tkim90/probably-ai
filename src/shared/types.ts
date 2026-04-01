@@ -18,3 +18,10 @@ export interface ExtensionSettings {
 export interface CompiledRule extends StoredRule {
   regex: RegExp;
 }
+
+export interface RuleMatch {
+  rule: CompiledRule;
+  start: number;
+  end: number;
+  text: string;
+}

@@ -2,8 +2,10 @@ import { cloneDefaultRules } from "../src/shared/defaultRules";
 import {
   BADGE_SELECTOR,
   COLLAPSE_SELECTOR,
+  HIGHLIGHT_SELECTOR,
   THREAD_FILTER_SELECTOR,
   THREAD_FILTER_TOGGLE_SELECTOR,
+  TOOLTIP_SELECTOR,
   scanRedditDocument,
 } from "../src/content/detector";
 import type { ExtensionSettings } from "../src/shared/types";
@@ -19,6 +21,14 @@ function createSettings(overrides: Partial<ExtensionSettings> = {}): ExtensionSe
 
 function getThreadFilterIconSrc(button: ParentNode | null): string {
   return button?.querySelector<HTMLImageElement>("img")?.getAttribute("src") ?? "";
+}
+
+function hoverBadge(badge: HTMLElement): void {
+  badge.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, relatedTarget: null }));
+}
+
+function unhoverBadge(badge: HTMLElement): void {
+  badge.dispatchEvent(new MouseEvent("mouseout", { bubbles: true, relatedTarget: null }));
 }
 
 describe("scanRedditDocument", () => {
@@ -72,6 +82,245 @@ describe("scanRedditDocument", () => {
     const badge = document.querySelector<HTMLElement>(BADGE_SELECTOR);
     const stored = JSON.parse(badge?.dataset.matchedRules ?? "[]");
     expect(stored).toContain("changes everything");
+  });
+
+  it("highlights matched text in a current Reddit post title on badge hover", () => {
+    document.body.innerHTML = `
+      <shreddit-post>
+        <div slot="credit-bar">
+          <div slot="author-metadata"><span>u/example</span></div>
+        </div>
+        <a slot="title">This changes everything for solo founders</a>
+      </shreddit-post>
+    `;
+
+    scanRedditDocument(document, createSettings(), "www.reddit.com", "/r/test/");
+
+    const badge = document.querySelector<HTMLElement>(BADGE_SELECTOR);
+    const title = document.querySelector<HTMLElement>("[slot='title']");
+    vi.useFakeTimers();
+
+    try {
+      hoverBadge(badge!);
+
+      const highlight = title?.querySelector<HTMLElement>(HIGHLIGHT_SELECTOR);
+      expect(document.querySelectorAll(TOOLTIP_SELECTOR)).toHaveLength(1);
+      expect(highlight?.textContent).toBe("changes everything");
+
+      unhoverBadge(badge!);
+      vi.advanceTimersByTime(120);
+
+      expect(title?.querySelector(HIGHLIGHT_SELECTOR)).toBeNull();
+      expect(document.querySelectorAll(TOOLTIP_SELECTOR)).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("highlights matched text in a current Reddit post body on badge hover", () => {
+    document.body.innerHTML = `
+      <shreddit-post>
+        <div slot="credit-bar">
+          <div slot="author-metadata"><span>u/example</span></div>
+        </div>
+        <a slot="title">Founder update</a>
+        <div slot="text-body">This changes everything for early customers.</div>
+      </shreddit-post>
+    `;
+
+    scanRedditDocument(document, createSettings(), "www.reddit.com", "/r/test/");
+
+    const badge = document.querySelector<HTMLElement>(BADGE_SELECTOR);
+    const body = document.querySelector<HTMLElement>("[slot='text-body']");
+    hoverBadge(badge!);
+
+    expect(body?.querySelector<HTMLElement>(HIGHLIGHT_SELECTOR)?.textContent).toBe(
+      "changes everything",
+    );
+  });
+
+  it("highlights matched text in a current Reddit comment body only on badge hover", () => {
+    document.body.innerHTML = `
+      <div data-testid="comment-thread">
+        <shreddit-comment>
+          <div slot="commentMeta">
+            <span>u/example</span>
+          </div>
+          <div slot="comment">This changes everything for search and discovery.</div>
+        </shreddit-comment>
+      </div>
+    `;
+
+    scanRedditDocument(document, createSettings(), "www.reddit.com", "/r/test/comments/abc123/post-title/");
+
+    const badge = document.querySelector<HTMLElement>(BADGE_SELECTOR);
+    const meta = document.querySelector<HTMLElement>("[slot='commentMeta']");
+    const comment = document.querySelector<HTMLElement>("[slot='comment']");
+    hoverBadge(badge!);
+
+    expect(meta?.querySelector(HIGHLIGHT_SELECTOR)).toBeNull();
+    expect(comment?.querySelector<HTMLElement>(HIGHLIGHT_SELECTOR)?.textContent).toBe(
+      "changes everything",
+    );
+  });
+
+  it("highlights matched text in old Reddit posts and comments on badge hover", () => {
+    document.body.innerHTML = `
+      <div class="thing link">
+        <div class="entry">
+          <p class="tagline">posted by u/poster</p>
+          <a class="title">This changes everything for solo founders</a>
+        </div>
+      </div>
+      <div class="commentarea">
+        <div class="sitetable">
+          <div class="thing comment">
+            <div class="entry">
+              <p class="tagline">posted by u/commenter</p>
+              <div class="usertext-body">
+                <div class="md"><p>This changes everything for search and discovery.</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    scanRedditDocument(document, createSettings(), "old.reddit.com", "/r/test/comments/abc123/post-title/");
+
+    const badges = document.querySelectorAll<HTMLElement>(BADGE_SELECTOR);
+    const title = document.querySelector<HTMLElement>(".thing.link .title");
+    const comment = document.querySelector<HTMLElement>(".thing.comment .md p");
+
+    hoverBadge(badges[0]);
+    expect(title?.querySelector<HTMLElement>(HIGHLIGHT_SELECTOR)?.textContent).toBe(
+      "changes everything",
+    );
+    unhoverBadge(badges[0]);
+
+    hoverBadge(badges[1]);
+    expect(comment?.querySelector<HTMLElement>(HIGHLIGHT_SELECTOR)?.textContent).toBe(
+      "changes everything",
+    );
+  });
+
+  it("merges overlapping hover highlights from multiple matched rules", () => {
+    document.body.innerHTML = `
+      <shreddit-post>
+        <div slot="credit-bar">
+          <div slot="author-metadata"><span>u/example</span></div>
+        </div>
+        <a slot="title">This changes everything — seriously.</a>
+      </shreddit-post>
+    `;
+
+    scanRedditDocument(document, createSettings(), "www.reddit.com", "/r/test/");
+
+    const badge = document.querySelector<HTMLElement>(BADGE_SELECTOR);
+    const title = document.querySelector<HTMLElement>("[slot='title']");
+    hoverBadge(badge!);
+
+    const highlights = title?.querySelectorAll(HIGHLIGHT_SELECTOR) ?? [];
+    expect(highlights).toHaveLength(2);
+    expect(Array.from(highlights, (node) => node.textContent)).toEqual([
+      "changes everything",
+      "\u2014",
+    ]);
+  });
+
+  it("removes hover highlights when injected UI is cleared on a later scan", () => {
+    document.body.innerHTML = `
+      <shreddit-post>
+        <div slot="credit-bar">
+          <div slot="author-metadata"><span>u/example</span></div>
+        </div>
+        <a slot="title">This changes everything for solo founders</a>
+      </shreddit-post>
+    `;
+
+    scanRedditDocument(document, createSettings(), "www.reddit.com", "/r/test/");
+
+    const badge = document.querySelector<HTMLElement>(BADGE_SELECTOR);
+    const title = document.querySelector<HTMLElement>("[slot='title']");
+    hoverBadge(badge!);
+    expect(title?.querySelectorAll(HIGHLIGHT_SELECTOR)).toHaveLength(1);
+
+    scanRedditDocument(
+      document,
+      {
+        enabled: false,
+        autoHideDetected: false,
+        rules: cloneDefaultRules(),
+      },
+      "www.reddit.com",
+      "/r/test/",
+    );
+
+    expect(title?.querySelector(HIGHLIGHT_SELECTOR)).toBeNull();
+    expect(document.querySelectorAll(TOOLTIP_SELECTOR)).toHaveLength(0);
+  });
+
+  it("keeps the tooltip and highlights visible across a later scan while the badge remains hovered", () => {
+    document.body.innerHTML = `
+      <shreddit-post>
+        <div slot="credit-bar">
+          <div slot="author-metadata"><span>u/example</span></div>
+        </div>
+        <a slot="title">This changes everything for solo founders</a>
+      </shreddit-post>
+    `;
+
+    scanRedditDocument(document, createSettings(), "www.reddit.com", "/r/test/");
+
+    const badge = document.querySelector<HTMLElement>(BADGE_SELECTOR);
+    const title = document.querySelector<HTMLElement>("[slot='title']");
+
+    hoverBadge(badge!);
+    expect(document.querySelectorAll(TOOLTIP_SELECTOR)).toHaveLength(1);
+    expect(title?.querySelectorAll(HIGHLIGHT_SELECTOR)).toHaveLength(1);
+
+    scanRedditDocument(document, createSettings(), "www.reddit.com", "/r/test/");
+
+    expect(document.querySelectorAll(TOOLTIP_SELECTOR)).toHaveLength(1);
+    expect(title?.querySelectorAll(HIGHLIGHT_SELECTOR)).toHaveLength(1);
+  });
+
+  it("does not hide the tooltip when a transient mouseout still leaves the pointer over the same badge", () => {
+    document.body.innerHTML = `
+      <shreddit-post>
+        <div slot="credit-bar">
+          <div slot="author-metadata"><span>u/example</span></div>
+        </div>
+        <a slot="title">This changes everything for solo founders</a>
+      </shreddit-post>
+    `;
+
+    scanRedditDocument(document, createSettings(), "www.reddit.com", "/r/test/");
+
+    const badge = document.querySelector<HTMLElement>(BADGE_SELECTOR);
+    const originalElementFromPoint = document.elementFromPoint?.bind(document);
+    vi.useFakeTimers();
+
+    try {
+      hoverBadge(badge!);
+      expect(document.querySelectorAll(TOOLTIP_SELECTOR)).toHaveLength(1);
+
+      Object.defineProperty(document, "elementFromPoint", {
+        configurable: true,
+        value: vi.fn(() => badge),
+      });
+
+      unhoverBadge(badge!);
+      vi.advanceTimersByTime(120);
+
+      expect(document.querySelectorAll(TOOLTIP_SELECTOR)).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+      Object.defineProperty(document, "elementFromPoint", {
+        configurable: true,
+        value: originalElementFromPoint,
+      });
+    }
   });
 
   it("does not flag regex matches that only appear after collapsing paragraph breaks", () => {
@@ -412,6 +661,63 @@ describe("scanRedditDocument", () => {
     expect(button?.textContent).toBe("Show 1 filtered comments");
     expect(getThreadFilterIconSrc(button)).toBe(showIconSrc);
     expect(comment?.style.display).toBe("none");
+  });
+
+  it("hides the outer current Reddit comment shell when fallback comment markup is used", () => {
+    document.body.innerHTML = `
+      <div data-testid="comment-thread">
+        <div data-testid="comment-shell" id="matched-shell">
+          <div data-testid="comment" id="matched-body">
+            <div slot="commentMeta">
+              <img alt="avatar" src="avatar.png" />
+              <span>u/example</span>
+              <span>1 day ago</span>
+            </div>
+            <div slot="comment">This changes everything for search and discovery.</div>
+          </div>
+          <div class="orphaned-chrome" id="orphaned-chrome">avatar rail</div>
+        </div>
+        <div data-testid="comment-shell" id="next-shell">
+          <div data-testid="comment">
+            <div slot="commentMeta">
+              <img alt="avatar" src="avatar-2.png" />
+              <span>u/next</span>
+              <span>1 day ago</span>
+            </div>
+            <div slot="comment">Ordinary reply from a human.</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    scanRedditDocument(
+      document,
+      createSettings({
+        autoHideDetected: true,
+      }),
+      "www.reddit.com",
+      "/r/test/comments/abc123/post-title/",
+    );
+
+    const thread = document.querySelector<HTMLElement>("[data-testid='comment-thread']");
+    const matchedShell = document.querySelector<HTMLElement>("#matched-shell");
+    const matchedBody = document.querySelector<HTMLElement>("#matched-body");
+    const nextShell = document.querySelector<HTMLElement>("#next-shell");
+    const button = document.querySelector<HTMLButtonElement>(THREAD_FILTER_TOGGLE_SELECTOR);
+
+    expect(document.querySelectorAll(BADGE_SELECTOR)).toHaveLength(1);
+    expect(document.querySelectorAll(THREAD_FILTER_SELECTOR)).toHaveLength(1);
+    expect(thread?.firstElementChild?.matches(THREAD_FILTER_SELECTOR)).toBe(true);
+    expect(button?.textContent).toBe("Show 1 filtered comments");
+    expect(matchedShell?.style.display).toBe("none");
+    expect(matchedBody?.style.display ?? "").toBe("");
+    expect(nextShell?.style.display ?? "").toBe("");
+
+    button?.click();
+
+    expect(button?.textContent).toBe("Hide 1 filtered comments");
+    expect(matchedShell?.style.display ?? "").toBe("");
+    expect(document.querySelector<HTMLElement>("#orphaned-chrome")?.parentElement).toBe(matchedShell);
   });
 
   it("uses the same opacity for parent and child revealed filtered comments", () => {

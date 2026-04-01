@@ -2,6 +2,7 @@ import { DEFAULT_RULES } from "../src/shared/defaultRules";
 import {
   compileRules,
   createDefaultSettings,
+  findRuleMatches,
   findMatchingRules,
   matchesAnyRule,
   normalizeSettings,
@@ -114,6 +115,85 @@ describe("findMatchingRules", () => {
     const result = findMatchingRules("This changes\n\neverything for founders.", compiled);
     expect(result).toHaveLength(1);
     expect(result[0].pattern).toBe("changes everything");
+  });
+});
+
+describe("findRuleMatches", () => {
+  it("returns exact literal match ranges", () => {
+    const compiled = compileRules(DEFAULT_RULES);
+    const result = findRuleMatches("This changes everything for founders.", compiled);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      start: 5,
+      end: 23,
+      text: "changes everything",
+    });
+    expect(result[0].rule.pattern).toBe("changes everything");
+  });
+
+  it("returns exact regex match ranges", () => {
+    const compiled = compileRules([
+      {
+        id: "regex-rule",
+        pattern: "coffee\\. It(?:'|’)s a lifestyle",
+        enabled: true,
+        source: "user",
+        matchType: "regex",
+      },
+    ]);
+    const text = "It's not coffee. It's a lifestyle.";
+    const result = findRuleMatches(text, compiled);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      start: 9,
+      end: 33,
+      text: "coffee. It's a lifestyle",
+    });
+  });
+
+  it("returns multiple matches from different rules", () => {
+    const compiled = compileRules(DEFAULT_RULES);
+    const result = findRuleMatches("This changes everything — seriously.", compiled);
+
+    expect(result).toHaveLength(2);
+    expect(result.map((match) => match.rule.pattern)).toEqual(
+      expect.arrayContaining(["changes everything", "\u2014"]),
+    );
+  });
+
+  it("maps literal whitespace-tolerant matches back to the original text", () => {
+    const compiled = compileRules(DEFAULT_RULES);
+    const text = "This changes\n\neverything for founders.";
+    const result = findRuleMatches(text, compiled);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      start: 5,
+      end: 24,
+      text: "changes\n\neverything",
+    });
+  });
+
+  it("does not return regex matches across preserved paragraph gaps", () => {
+    const compiled = compileRules([
+      {
+        id: "regex-rule",
+        pattern:
+          "it'?s?\\s+not\\s+([^.!?\\n]{1,60})\\s*[,.!?:;-]?\\s+[Ii]t'?s?\\s+([^.!?\\n]{1,60})",
+        enabled: true,
+        source: "user",
+        matchType: "regex",
+      },
+    ]);
+
+    expect(
+      findRuleMatches(
+        "what makes it not getting traction amongst ppls\n\ntry it out :- turbochat.live",
+        compiled,
+      ),
+    ).toHaveLength(0);
   });
 });
 

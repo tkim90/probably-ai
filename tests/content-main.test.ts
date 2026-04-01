@@ -8,10 +8,12 @@ const getSettingsMock = vi.fn();
 vi.mock("../src/content/detector", () => ({
   BADGE_SELECTOR: "[data-probably-ai-badge='true']",
   COLLAPSE_SELECTOR: "[data-probably-ai-collapse='true']",
+  HIGHLIGHT_SELECTOR: "[data-probably-ai-highlight='true']",
   INTERNAL_STYLE_ID: "probably-ai-style",
   THREAD_FILTER_SELECTOR: "[data-probably-ai-thread-filter='true']",
   THREAD_FILTER_TOGGLE_SELECTOR: "[data-probably-ai-thread-filter-toggle='true']",
   TOGGLE_SELECTOR: "[data-probably-ai-toggle='true']",
+  TOOLTIP_SELECTOR: "[data-probably-ai-tooltip='true']",
   clearInjectedUi: clearInjectedUiMock,
   scanRedditDocument: scanRedditDocumentMock,
 }));
@@ -38,12 +40,15 @@ let onChangedListener:
 let addListenerMock: ReturnType<typeof vi.fn>;
 let originalChrome: typeof chrome | undefined;
 let originalMutationObserver: typeof MutationObserver | undefined;
+let mutationCallback: MutationCallback | null = null;
 
 class FakeMutationObserver {
   observe = vi.fn();
   disconnect = vi.fn();
 
-  constructor(_callback: MutationCallback) {}
+  constructor(callback: MutationCallback) {
+    mutationCallback = callback;
+  }
 
   takeRecords(): MutationRecord[] {
     return [];
@@ -65,6 +70,7 @@ describe("content runtime", () => {
     vi.resetModules();
     vi.clearAllMocks();
     onChangedListener = undefined;
+    mutationCallback = null;
     addListenerMock = vi.fn((listener) => {
       onChangedListener = listener;
     });
@@ -157,5 +163,78 @@ describe("content runtime", () => {
     });
 
     await expect(loadContentScript()).rejects.toThrow("boom");
+  });
+
+  it("ignores internal hover highlight mutations when extracted text nodes lose their parent", async () => {
+    getSettingsMock.mockResolvedValueOnce(createDefaultSettings());
+    vi.useFakeTimers();
+
+    try {
+      await loadContentScript();
+      scanRedditDocumentMock.mockClear();
+
+      const title = document.createElement("div");
+      document.body.append(title);
+
+      const removedText = document.createTextNode("changes everything");
+      title.append(removedText);
+
+      const highlight = document.createElement("mark");
+      highlight.setAttribute("data-probably-ai-highlight", "true");
+      highlight.textContent = removedText.textContent;
+      title.append(highlight);
+      title.removeChild(removedText);
+
+      mutationCallback?.([
+        {
+          addedNodes: [highlight],
+          removedNodes: [removedText],
+          target: title,
+          type: "childList",
+        } as MutationRecord,
+      ], {} as MutationObserver);
+
+      vi.runAllTimers();
+      await flushUi();
+
+      expect(removedText.parentElement).toBeNull();
+      expect(highlight.parentElement).toBe(title);
+      expect(scanRedditDocumentMock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ignores internal character data mutations from injected hover UI", async () => {
+    getSettingsMock.mockResolvedValueOnce(createDefaultSettings());
+    vi.useFakeTimers();
+
+    try {
+      await loadContentScript();
+      scanRedditDocumentMock.mockClear();
+
+      const tooltip = document.createElement("div");
+      tooltip.setAttribute("data-probably-ai-tooltip", "true");
+      const label = document.createTextNode("Matched rules");
+      tooltip.append(label);
+      document.body.append(tooltip);
+
+      mutationCallback?.([
+        {
+          addedNodes: [],
+          removedNodes: [],
+          oldValue: "Matched",
+          target: label,
+          type: "characterData",
+        } as MutationRecord,
+      ], {} as MutationObserver);
+
+      vi.runAllTimers();
+      await flushUi();
+
+      expect(scanRedditDocumentMock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
