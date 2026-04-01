@@ -1026,7 +1026,7 @@ function positionTooltip(tooltip: HTMLElement, anchor: HTMLElement): void {
 
   const tooltipRect = tooltip.getBoundingClientRect();
 
-  let top = rect.bottom + scrollY + 6;
+  let top = rect.top + scrollY - tooltipRect.height - 6;
   let left = rect.left + scrollX;
 
   if (left + tooltipRect.width > scrollX + window.innerWidth - 8) {
@@ -1036,8 +1036,8 @@ function positionTooltip(tooltip: HTMLElement, anchor: HTMLElement): void {
     left = scrollX + 8;
   }
 
-  if (rect.bottom + tooltipRect.height + 6 > window.innerHeight) {
-    top = rect.top + scrollY - tooltipRect.height - 6;
+  if (rect.top - tooltipRect.height - 6 < 0) {
+    top = rect.bottom + scrollY + 6;
   }
 
   tooltip.style.top = `${top}px`;
