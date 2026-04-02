@@ -393,11 +393,11 @@ function ensureInjectedStyles(documentRef: Document): void {
     }
 
     .probably-ai-highlight {
-      background: rgba(255, 235, 59, 0.5);
+      background: rgba(255, 235, 59, 0.5) !important;
       border-radius: 0.18em;
       box-decoration-break: clone;
       -webkit-box-decoration-break: clone;
-      color: #111111;
+      color: #111111 !important;
       padding: 0;
     }
 
@@ -1259,7 +1259,7 @@ function syncThreadGroupButtonContents(
   }
 
   if (label) {
-    label.textContent = `${revealed ? "Hide" : "Show"} ${count} filtered comments`;
+    label.textContent = (revealed ? "Hide" : "Show") + " " + count + " filtered comments";
   }
 }
 

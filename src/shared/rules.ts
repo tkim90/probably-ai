@@ -44,26 +44,40 @@ export function normalizeSettings(
             : "regex",
     }));
 
-  const hasLegacyDefaults = normalizedRules.some(
-    (rule) =>
-      rule.source === "default" &&
-      !cloneDefaultRules().some((defaultRule) => defaultRule.id === rule.id),
+  const currentDefaults = cloneDefaultRules();
+  const defaultsById = new Map(currentDefaults.map((rule) => [rule.id, rule]));
+
+  const syncedRules = normalizedRules.map((rule) => {
+    if (rule.source !== "default") {
+      return rule;
+    }
+
+    const current = defaultsById.get(rule.id);
+    if (!current) {
+      return rule;
+    }
+
+    return { ...current, enabled: rule.enabled };
+  });
+
+  const hasLegacyDefaults = syncedRules.some(
+    (rule) => rule.source === "default" && !defaultsById.has(rule.id),
   );
 
   return {
     enabled: candidate.enabled ?? true,
     autoHideDetected: candidate.autoHideDetected ?? true,
     rules:
-      normalizedRules.length === 0
-        ? cloneDefaultRules()
+      syncedRules.length === 0
+        ? currentDefaults
         : hasLegacyDefaults
           ? [
-              ...cloneDefaultRules(),
-              ...normalizedRules
+              ...currentDefaults,
+              ...syncedRules
                 .filter((rule) => rule.source === "user")
                 .map((rule) => ({ ...rule })),
             ]
-          : normalizedRules,
+          : syncedRules,
   };
 }
 

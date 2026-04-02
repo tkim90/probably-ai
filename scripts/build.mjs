@@ -9,12 +9,38 @@ const popupOutput = {
   entryFileNames: "assets/[name].js",
 };
 
+/** Minifies CSS inside template literals (e.g. style.textContent = `...`) */
+function minifyInlineCss() {
+  return {
+    name: "minify-inline-css",
+    transform(code, id) {
+      if (!id.endsWith("detector.ts")) return;
+      return code.replace(
+        /\.textContent\s*=\s*`([^`]+)`/g,
+        (_match, css) => {
+          const minified = css
+            .replace(/\/\*[\s\S]*?\*\//g, "")
+            .replace(/\s+/g, " ")
+            .replace(/\s*([{}:;,>~+])\s*/g, "$1")
+            .replace(/;}/g, "}")
+            .trim();
+          return `.textContent=\`${minified}\``;
+        },
+      );
+    },
+  };
+}
+
+// Build 1: Popup HTML + CSS + JS
 await build({
   configFile: false,
   root,
   publicDir: resolve(root, "public"),
   base: "./",
   build: {
+    target: "esnext",
+    sourcemap: false,
+    modulePreload: { polyfill: false },
     outDir: "dist",
     emptyOutDir: true,
     rollupOptions: {
@@ -26,11 +52,15 @@ await build({
   },
 });
 
+// Build 2: Content script (IIFE)
 await build({
   configFile: false,
   root,
   publicDir: false,
+  plugins: [minifyInlineCss()],
   build: {
+    target: "esnext",
+    sourcemap: false,
     outDir: "dist/assets",
     emptyOutDir: false,
     cssCodeSplit: false,
