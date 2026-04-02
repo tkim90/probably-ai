@@ -123,14 +123,6 @@ export const DEFAULT_RULES: StoredRule[] = [
     source: "default",
     matchType: "regex",
   },
-  {
-    id: "default-participial-phrase",
-    pattern:
-      ",\\s+(revealing|highlighting|showcasing|underscoring|demonstrating|suggesting|indicating|illustrating|reflecting|emphasizing)\\b",
-    enabled: true,
-    source: "default",
-    matchType: "regex",
-  },
 ];
 
 export function cloneDefaultRules(): StoredRule[] {
