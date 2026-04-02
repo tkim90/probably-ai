@@ -204,6 +204,99 @@ describe("scanRedditDocument", () => {
     );
   });
 
+  it("highlights all instances of matched text in an old Reddit comment body", () => {
+    document.body.innerHTML = `
+      <div class="commentarea">
+        <div class="sitetable">
+          <div class="thing comment">
+            <div class="entry">
+              <p class="tagline">posted by u/commenter</p>
+              <div class="usertext-body">
+                <div class="md"><p>This changes everything and this changes everything too.</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    scanRedditDocument(document, createSettings(), "old.reddit.com", "/r/test/comments/abc123/post-title/");
+
+    const badge = document.querySelector<HTMLElement>(BADGE_SELECTOR);
+    const md = document.querySelector<HTMLElement>(".thing.comment .md");
+    hoverBadge(badge!);
+
+    const highlights = md?.querySelectorAll(HIGHLIGHT_SELECTOR) ?? [];
+    expect(highlights).toHaveLength(2);
+    expect(Array.from(highlights, (node) => node.textContent)).toEqual([
+      "changes everything",
+      "changes everything",
+    ]);
+  });
+
+  it("highlights all instances across paragraphs in an old Reddit comment", () => {
+    document.body.innerHTML = `
+      <div class="commentarea">
+        <div class="sitetable">
+          <div class="thing comment">
+            <div class="entry">
+              <p class="tagline">posted by u/commenter</p>
+              <div class="usertext-body">
+                <div class="md">
+                  <p>This changes everything for you.</p>
+                  <p>And this changes everything for me.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    scanRedditDocument(document, createSettings(), "old.reddit.com", "/r/test/comments/abc123/post-title/");
+
+    const badge = document.querySelector<HTMLElement>(BADGE_SELECTOR);
+    const md = document.querySelector<HTMLElement>(".thing.comment .md");
+    hoverBadge(badge!);
+
+    const highlights = md?.querySelectorAll(HIGHLIGHT_SELECTOR) ?? [];
+    expect(highlights).toHaveLength(2);
+    expect(Array.from(highlights, (node) => node.textContent)).toEqual([
+      "changes everything",
+      "changes everything",
+    ]);
+  });
+
+  it("highlights all instances with inline formatting in an old Reddit comment", () => {
+    document.body.innerHTML = `
+      <div class="commentarea">
+        <div class="sitetable">
+          <div class="thing comment">
+            <div class="entry">
+              <p class="tagline">posted by u/commenter</p>
+              <div class="usertext-body">
+                <div class="md"><p>This <strong>changes everything</strong> and this changes everything too.</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    scanRedditDocument(document, createSettings(), "old.reddit.com", "/r/test/comments/abc123/post-title/");
+
+    const badge = document.querySelector<HTMLElement>(BADGE_SELECTOR);
+    const md = document.querySelector<HTMLElement>(".thing.comment .md");
+    hoverBadge(badge!);
+
+    const highlights = md?.querySelectorAll(HIGHLIGHT_SELECTOR) ?? [];
+    expect(highlights).toHaveLength(2);
+    expect(Array.from(highlights, (node) => node.textContent)).toEqual([
+      "changes everything",
+      "changes everything",
+    ]);
+  });
+
   it("merges overlapping hover highlights from multiple matched rules", () => {
     document.body.innerHTML = `
       <shreddit-post>

@@ -963,10 +963,10 @@ function resolveTextBoundary(
       };
     }
 
-    if (remaining === length) {
+    if (remaining === length && isEnd) {
       return {
         node,
-        offset: isEnd ? length : remaining,
+        offset: length,
       };
     }
 
