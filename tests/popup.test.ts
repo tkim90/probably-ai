@@ -216,7 +216,7 @@ describe("popup UI", () => {
     expect(currentSettings.rules.every((rule) => rule.source === "default")).toBe(true);
     expect(phrases.value).not.toContain("ship fast");
     expect(phrases.value).toContain("changes everything");
-    expect(document.querySelector<HTMLTextAreaElement>("#regex-textarea")?.value).toBe("");
+    expect(document.querySelector<HTMLTextAreaElement>("#regex-textarea")?.value).not.toBe("");
     expect(document.querySelector<HTMLElement>("#reset-confirmation")?.hidden).toBe(true);
   });
 });

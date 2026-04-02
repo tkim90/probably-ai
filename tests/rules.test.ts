@@ -77,9 +77,14 @@ describe("rule matching", () => {
     ).toBe(false);
   });
 
-  it("matches em dashes by default", () => {
+  it("matches multiple em dashes by default", () => {
     const compiled = compileRules(DEFAULT_RULES);
-    expect(matchesAnyRule("This sentence uses an em dash — like this.", compiled)).toBe(true);
+    expect(matchesAnyRule("This sentence — with two em dashes — matches.", compiled)).toBe(true);
+  });
+
+  it("does not match a single em dash by default", () => {
+    const compiled = compileRules(DEFAULT_RULES);
+    expect(matchesAnyRule("This sentence uses an em dash — like this.", compiled)).toBe(false);
   });
 
   it("does not match double dashes by default", () => {
@@ -91,10 +96,10 @@ describe("rule matching", () => {
 describe("findMatchingRules", () => {
   it("returns all rules that match", () => {
     const compiled = compileRules(DEFAULT_RULES);
-    const result = findMatchingRules("This changes everything — seriously.", compiled);
+    const result = findMatchingRules("This changes everything, let's delve into it.", compiled);
     expect(result).toHaveLength(2);
     expect(result.map((r) => r.pattern)).toContain("changes everything");
-    expect(result.map((r) => r.pattern)).toContain("\u2014");
+    expect(result.map((r) => r.pattern)).toContain("delve into");
   });
 
   it("returns empty array when nothing matches", () => {
@@ -155,11 +160,11 @@ describe("findRuleMatches", () => {
 
   it("returns multiple matches from different rules", () => {
     const compiled = compileRules(DEFAULT_RULES);
-    const result = findRuleMatches("This changes everything — seriously.", compiled);
+    const result = findRuleMatches("This changes everything, let's delve into it.", compiled);
 
     expect(result).toHaveLength(2);
     expect(result.map((match) => match.rule.pattern)).toEqual(
-      expect.arrayContaining(["changes everything", "\u2014"]),
+      expect.arrayContaining(["changes everything", "delve into"]),
     );
   });
 

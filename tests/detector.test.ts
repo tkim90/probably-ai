@@ -303,7 +303,7 @@ describe("scanRedditDocument", () => {
         <div slot="credit-bar">
           <div slot="author-metadata"><span>u/example</span></div>
         </div>
-        <a slot="title">This changes everything — seriously.</a>
+        <a slot="title">This changes everything, let's delve into it.</a>
       </shreddit-post>
     `;
 
@@ -317,7 +317,7 @@ describe("scanRedditDocument", () => {
     expect(highlights).toHaveLength(2);
     expect(Array.from(highlights, (node) => node.textContent)).toEqual([
       "changes everything",
-      "\u2014",
+      "delve into",
     ]);
   });
 
@@ -933,7 +933,7 @@ describe("scanRedditDocument", () => {
             <div class="entry">
               <p class="tagline">posted by u/test</p>
               <div class="usertext-body">
-                <div class="md"><p>This uses an em dash — right here.</p></div>
+                <div class="md"><p>This uses an em dash — right here — to make a point.</p></div>
               </div>
             </div>
             <div class="child">
@@ -1143,7 +1143,7 @@ describe("scanRedditDocument", () => {
       <div data-testid="comment-thread">
         <shreddit-comment>
           <div slot="commentMeta"><span>u/parent</span></div>
-          <div slot="comment"><p>Either way — bookmarked and seriously impressed.</p></div>
+          <div slot="comment"><p>Either way — bookmarked — and seriously impressed.</p></div>
           <shreddit-comment>
             <div slot="commentMeta"><span>u/child</span></div>
             <div slot="comment"><p>Thank you so much and I'm stoked you like it!</p></div>
@@ -1175,7 +1175,7 @@ describe("scanRedditDocument", () => {
             <div class="entry">
               <p class="tagline">posted by u/parent</p>
               <div class="usertext-body">
-                <div class="md"><p>Either way — bookmarked and seriously impressed.</p></div>
+                <div class="md"><p>Either way — bookmarked — and seriously impressed.</p></div>
               </div>
             </div>
             <div class="child">
