@@ -118,7 +118,7 @@ export const DEFAULT_RULES: StoredRule[] = [
   },
   {
     id: "default-its-not-just-its",
-    pattern: "it['\u2019]?s?\\s+not\\s+(just\\s+)?.+?[.,;!?-]\\s+it['\u2019]?s?\\s+",
+    pattern: "it'?s?\\s+not\\s+([^.!?\\n]{1,60})\\s*[,.!?:;-]?\\s+[Ii]t'?s?\\s+([^.!?\\n]{1,60})",
     enabled: true,
     source: "default",
     matchType: "regex",
